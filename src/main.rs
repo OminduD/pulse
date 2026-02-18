@@ -1,17 +1,23 @@
-//! Pulse — A high-performance terminal system monitor with cyberpunk aesthetics.
+//! Pulse — A production-grade terminal system monitor with animated cyberpunk TUI.
 //!
 //! # Architecture
-//! - `app`    — Application state, tick logic, sorting modes
-//! - `system` — System data collection via `sysinfo`
-//! - `ui`     — All ratatui rendering code
-//! - `event`  — Async event loop (keyboard + periodic tick)
-//! - `theme`  — Neon cyberpunk color palette
+//! - `app`      — Application state, input handling, data coordination
+//! - `config`   — TOML configuration system (~/.config/pulse/config.toml)
+//! - `event`    — Async event loop (keyboard + periodic tick)
+//! - `history`  — Ring-buffer historical metrics engine with JSON export
+//! - `plugin`   — Dynamic plugin loading system
+//! - `system/`  — System data collection (CPU, memory, disk, network, process, GPU)
+//! - `ui/`      — All ratatui rendering (layout, panels, animation, theme)
+//! - `utils`    — Shared formatting and helper functions
 
 mod app;
+mod config;
 mod event;
+mod history;
+mod plugin;
 mod system;
-mod theme;
 mod ui;
+mod utils;
 
 use std::io;
 
@@ -24,13 +30,25 @@ use crossterm::{
 use ratatui::prelude::*;
 
 use app::App;
+use config::Config;
 use event::{Event, EventLoop};
 
-// ── entry point ──────────────────────────────────────────────────────────────
+// ── Entry point ──────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
+
+    // Load configuration
+    let config = Config::load().unwrap_or_else(|e| {
+        eprintln!("Warning: failed to load config: {e} — using defaults");
+        Config::default()
+    });
+
+    // Save default config if it doesn't exist
+    if !Config::path().exists() {
+        let _ = config.save();
+    }
 
     // Terminal setup
     enable_raw_mode()?;
@@ -41,7 +59,7 @@ async fn main() -> Result<()> {
     terminal.clear()?;
 
     // Run the application
-    let result = run(&mut terminal).await;
+    let result = run(&mut terminal, config).await;
 
     // Restore terminal
     disable_raw_mode()?;
@@ -56,9 +74,10 @@ async fn main() -> Result<()> {
 }
 
 /// Main application loop. Drives the event loop and rendering pipeline.
-async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
-    let mut app = App::new();
-    let event_loop = EventLoop::new(16); // ~60 FPS tick rate (16 ms)
+async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, config: Config) -> Result<()> {
+    let tick_ms = config.frame_tick_ms();
+    let mut app = App::new(config);
+    let event_loop = EventLoop::new(tick_ms);
 
     loop {
         // ── Render ───────────────────────────────────────────────────────
