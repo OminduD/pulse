@@ -22,6 +22,7 @@ pub struct Config {
     pub display: DisplayConfig,
     pub panels: PanelConfig,
     pub security: SecurityConfig,
+    pub remote: RemoteConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +49,16 @@ pub struct DisplayConfig {
     pub matrix_bg: bool,
     /// Default layout mode: "compact", "detailed".
     pub layout_mode: String,
+    /// Enable CRT post-processing effects (scanlines, vignette, aberration).
+    pub crt_effects: bool,
+    /// CRT scanline intensity 0.0–1.0.
+    pub crt_scanline_intensity: f64,
+    /// CRT vignette intensity 0.0–1.0.
+    pub crt_vignette_intensity: f64,
+    /// CRT chromatic aberration strength 0.0–1.0.
+    pub crt_aberration: f64,
+    /// CRT phosphor glow persistence 0.0–1.0.
+    pub crt_glow: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +70,17 @@ pub struct PanelConfig {
     pub network: bool,
     pub processes: bool,
     pub gpu: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RemoteConfig {
+    /// List of remote hosts in "user@host" format.
+    pub hosts: Vec<String>,
+    /// Path to pulse binary on remote hosts (defaults to "pulse").
+    pub remote_binary: String,
+    /// SSH connection timeout in seconds.
+    pub connect_timeout_secs: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +105,7 @@ impl Default for Config {
             display: DisplayConfig::default(),
             panels: PanelConfig::default(),
             security: SecurityConfig::default(),
+            remote: RemoteConfig::default(),
         }
     }
 }
@@ -105,6 +128,21 @@ impl Default for DisplayConfig {
             animations: true,
             matrix_bg: false,
             layout_mode: "detailed".into(),
+            crt_effects: false,
+            crt_scanline_intensity: 0.3,
+            crt_vignette_intensity: 0.4,
+            crt_aberration: 0.2,
+            crt_glow: 0.15,
+        }
+    }
+}
+
+impl Default for RemoteConfig {
+    fn default() -> Self {
+        Self {
+            hosts: Vec::new(),
+            remote_binary: "pulse".into(),
+            connect_timeout_secs: 10,
         }
     }
 }
