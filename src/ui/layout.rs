@@ -45,6 +45,7 @@ pub enum ActiveView {
     Disk,
     Gpu,
     History,
+    Remote,
 }
 
 impl ActiveView {
@@ -55,6 +56,7 @@ impl ActiveView {
             Self::Disk => "Disk",
             Self::Gpu => "GPU",
             Self::History => "History",
+            Self::Remote => "Remote",
         }
     }
 }
