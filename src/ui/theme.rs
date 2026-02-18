@@ -12,6 +12,8 @@ pub enum ThemeId {
     Neon,
     Monochrome,
     Retro,
+    Synthwave,
+    Ocean,
 }
 
 impl ThemeId {
@@ -19,13 +21,17 @@ impl ThemeId {
         match s.to_lowercase().as_str() {
             "monochrome" | "mono" => Self::Monochrome,
             "retro" | "green" => Self::Retro,
+            "synthwave" | "synth" => Self::Synthwave,
+            "ocean" | "blue" => Self::Ocean,
             _ => Self::Neon,
         }
     }
 
     pub fn next(self) -> Self {
         match self {
-            Self::Neon => Self::Monochrome,
+            Self::Neon => Self::Synthwave,
+            Self::Synthwave => Self::Ocean,
+            Self::Ocean => Self::Monochrome,
             Self::Monochrome => Self::Retro,
             Self::Retro => Self::Neon,
         }
@@ -36,6 +42,8 @@ impl ThemeId {
             Self::Neon => "Neon",
             Self::Monochrome => "Mono",
             Self::Retro => "Retro",
+            Self::Synthwave => "Synth",
+            Self::Ocean => "Ocean",
         }
     }
 }
@@ -51,6 +59,7 @@ pub struct Theme {
     pub bg_panel: Color,
     // Borders & text
     pub border_dim: Color,
+    pub border_glow: Color,
     pub text_dim: Color,
     pub text_bright: Color,
     // Accent colors
@@ -62,6 +71,9 @@ pub struct Theme {
     pub accent_success: Color,
     // Chart gradient stops
     pub gradient: [Color; 4],
+    // Extra effects
+    pub sparkline_fill: Color,
+    pub header_accent: Color,
 }
 
 impl Theme {
@@ -70,6 +82,8 @@ impl Theme {
             ThemeId::Neon => Self::neon(),
             ThemeId::Monochrome => Self::monochrome(),
             ThemeId::Retro => Self::retro(),
+            ThemeId::Synthwave => Self::synthwave(),
+            ThemeId::Ocean => Self::ocean(),
         }
     }
 
@@ -81,6 +95,7 @@ impl Theme {
             bg_dark: Color::Rgb(10, 10, 18),
             bg_panel: Color::Rgb(16, 16, 28),
             border_dim: Color::Rgb(40, 40, 70),
+            border_glow: Color::Rgb(0, 180, 200),
             text_dim: Color::Rgb(100, 100, 140),
             text_bright: Color::Rgb(200, 200, 230),
             accent_primary: Color::Rgb(0, 255, 255),     // Cyan
@@ -95,6 +110,8 @@ impl Theme {
                 Color::Rgb(191, 64, 255),
                 Color::Rgb(255, 16, 240),
             ],
+            sparkline_fill: Color::Rgb(0, 120, 140),
+            header_accent: Color::Rgb(0, 255, 255),
         }
     }
 
@@ -106,6 +123,7 @@ impl Theme {
             bg_dark: Color::Rgb(0, 0, 0),
             bg_panel: Color::Rgb(15, 15, 15),
             border_dim: Color::Rgb(60, 60, 60),
+            border_glow: Color::Rgb(140, 140, 140),
             text_dim: Color::Rgb(120, 120, 120),
             text_bright: Color::Rgb(220, 220, 220),
             accent_primary: Color::Rgb(200, 200, 200),
@@ -120,6 +138,8 @@ impl Theme {
                 Color::Rgb(180, 180, 180),
                 Color::Rgb(240, 240, 240),
             ],
+            sparkline_fill: Color::Rgb(80, 80, 80),
+            header_accent: Color::Rgb(200, 200, 200),
         }
     }
 
@@ -131,6 +151,7 @@ impl Theme {
             bg_dark: Color::Rgb(0, 10, 0),
             bg_panel: Color::Rgb(0, 15, 0),
             border_dim: Color::Rgb(0, 50, 0),
+            border_glow: Color::Rgb(0, 180, 0),
             text_dim: Color::Rgb(0, 100, 0),
             text_bright: Color::Rgb(0, 220, 0),
             accent_primary: Color::Rgb(0, 255, 0),
@@ -145,6 +166,64 @@ impl Theme {
                 Color::Rgb(0, 200, 0),
                 Color::Rgb(0, 255, 0),
             ],
+            sparkline_fill: Color::Rgb(0, 80, 0),
+            header_accent: Color::Rgb(0, 255, 0),
+        }
+    }
+
+    // ── Synthwave ────────────────────────────────────────────────────────
+
+    fn synthwave() -> Self {
+        Self {
+            id: ThemeId::Synthwave,
+            bg_dark: Color::Rgb(15, 5, 25),
+            bg_panel: Color::Rgb(25, 10, 40),
+            border_dim: Color::Rgb(60, 20, 80),
+            border_glow: Color::Rgb(255, 50, 200),
+            text_dim: Color::Rgb(120, 80, 160),
+            text_bright: Color::Rgb(230, 200, 255),
+            accent_primary: Color::Rgb(255, 50, 200),     // Hot pink
+            accent_secondary: Color::Rgb(100, 80, 255),    // Electric blue
+            accent_tertiary: Color::Rgb(255, 200, 50),     // Gold
+            accent_warning: Color::Rgb(255, 160, 30),      // Deep orange
+            accent_error: Color::Rgb(255, 20, 60),         // Neon red
+            accent_success: Color::Rgb(50, 255, 180),      // Teal
+            gradient: [
+                Color::Rgb(50, 255, 180),
+                Color::Rgb(100, 80, 255),
+                Color::Rgb(255, 50, 200),
+                Color::Rgb(255, 200, 50),
+            ],
+            sparkline_fill: Color::Rgb(80, 30, 120),
+            header_accent: Color::Rgb(255, 50, 200),
+        }
+    }
+
+    // ── Ocean deep ───────────────────────────────────────────────────────
+
+    fn ocean() -> Self {
+        Self {
+            id: ThemeId::Ocean,
+            bg_dark: Color::Rgb(5, 12, 20),
+            bg_panel: Color::Rgb(10, 18, 32),
+            border_dim: Color::Rgb(20, 50, 80),
+            border_glow: Color::Rgb(40, 160, 220),
+            text_dim: Color::Rgb(70, 110, 150),
+            text_bright: Color::Rgb(180, 220, 240),
+            accent_primary: Color::Rgb(40, 180, 255),      // Sky blue
+            accent_secondary: Color::Rgb(0, 220, 200),     // Aqua
+            accent_tertiary: Color::Rgb(100, 140, 255),    // Soft purple-blue
+            accent_warning: Color::Rgb(255, 200, 80),      // Warm yellow
+            accent_error: Color::Rgb(255, 100, 80),        // Coral
+            accent_success: Color::Rgb(60, 230, 160),      // Seafoam
+            gradient: [
+                Color::Rgb(0, 80, 120),
+                Color::Rgb(0, 160, 200),
+                Color::Rgb(40, 180, 255),
+                Color::Rgb(120, 220, 255),
+            ],
+            sparkline_fill: Color::Rgb(15, 60, 100),
+            header_accent: Color::Rgb(40, 180, 255),
         }
     }
 
@@ -152,6 +231,14 @@ impl Theme {
 
     pub fn border_style(&self) -> Style {
         Style::default().fg(self.border_dim)
+    }
+
+    pub fn glow_border_style(&self, phase: f64) -> Style {
+        let glow = crate::ui::animation::breathing(phase);
+        let dim = self.border_dim;
+        let bright = self.border_glow;
+        let color = lerp_color(dim, bright, glow);
+        Style::default().fg(color)
     }
 
     pub fn title_style(&self) -> Style {
