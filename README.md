@@ -31,10 +31,10 @@ A high-performance terminal system monitor built in Rust with an animated TUI, m
 ### TUI & Visuals
 | Feature | Description |
 |---------|-------------|
-| **3 Themes** | Neon Cyberpunk, Monochrome Terminal, Retro Amber — cycle with `t` |
+| **5 Themes** | Neon Cyberpunk, Synthwave, Ocean, Monochrome, Retro Green — cycle with `t` |
 | **4 Layout Modes** | Detailed, Compact, Focus, ProcessOnly — cycle with `m` |
 | **5 Views** | Overview, Network Inspector, Disk Detail, GPU, History |
-| **Animations** | Pulsing header, scrolling patterns, matrix rain, gradient sparklines, glow effects |
+| **Animations** | Pulsing borders, scanning header, animated activity bars, braille sparklines, shimmer progress bars, gradient gauges, spinners, wave effects, breathing glow, flicker alerts |
 | **60 FPS** | Configurable frame rate with adaptive refresh |
 
 ## Keyboard Controls
