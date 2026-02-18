@@ -2,6 +2,7 @@
 //! based on the current application view mode.
 
 pub mod animation;
+pub mod crt;
 pub mod layout;
 pub mod panels;
 pub mod theme;
@@ -41,6 +42,12 @@ pub fn render(frame: &mut Frame, app: &App) {
         panels::draw_filter_input(frame, size, app);
     }
     panels::draw_status_message(frame, size, app);
+
+    // CRT post-processing: modify the buffer after all widgets are rendered
+    if app.crt_enabled {
+        let buf = frame.buffer_mut();
+        crt::apply_crt_effects(buf, &app.crt_config, app.tick_count);
+    }
 }
 
 /// Render a subtle ambient background effect — a dim wave at the very bottom.
@@ -106,6 +113,12 @@ fn render_detailed(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
             panels::draw_network(frame, areas.bottom_left, app);
             panels::draw_processes(frame, areas.bottom_right, app);
         }
+        ActiveView::Remote => {
+            panels::draw_remote(frame, areas.top_left, app);
+            panels::draw_memory_disk(frame, areas.top_right, app);
+            panels::draw_network(frame, areas.bottom_left, app);
+            panels::draw_processes(frame, areas.bottom_right, app);
+        }
     }
 }
 
@@ -146,5 +159,6 @@ fn render_focus(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
         ActiveView::Disk => panels::draw_disk_detail(frame, areas.top_left, app),
         ActiveView::Gpu => panels::draw_gpu(frame, areas.top_left, app),
         ActiveView::History => panels::draw_history(frame, areas.top_left, app),
+        ActiveView::Remote => panels::draw_remote(frame, areas.top_left, app),
     }
 }
