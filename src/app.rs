@@ -174,7 +174,7 @@ impl App {
 
         // Advance animation phase (full cycle every ~2 seconds at 60 FPS)
         if self.config.display.animations {
-            self.phase = (self.phase + 1.0 / 120.0) % 1.0;
+            self.phase = (self.phase + 1.0 / 90.0) % 1.0;
         }
 
         let now = Instant::now();
