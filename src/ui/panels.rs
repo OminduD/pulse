@@ -3,9 +3,10 @@
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
+    symbols,
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Gauge, Paragraph, Row, Sparkline, Table, Wrap},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Sparkline, Table, Wrap},
     Frame,
 };
 
@@ -20,32 +21,60 @@ use crate::utils;
 
 pub fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
-    let pulse = animation::pulse_value(app.phase);
-    let header_color = theme.gradient_color(pulse);
-
+    let tick = app.tick_count;
+    let phase = app.phase;
     let bar_width = area.width as usize;
-    let scrolling = animation::scrolling_pattern(app.tick_count, bar_width);
+
+    // Animated scan line across the top
+    let scan = animation::scan_line(tick, bar_width);
+
+    // Rainbow-tinted title based on phase
+    let (nr, ng, nb) = animation::neon_cycle(phase);
+    let title_color = Color::Rgb(nr, ng, nb);
 
     let uptime_str = utils::format_uptime(app.uptime);
+    let spin = animation::dot_spinner(tick);
     let title_text = format!(
-        " ⚡ PULSE — SYSTEM MONITOR ⚡  [{}] [{}] up: {}",
+        " {} PULSE — SYSTEM MONITOR {}  [{}] [{}] up: {}",
+        spin,
+        spin,
         app.layout_mode.label(),
         app.active_view.label(),
-        uptime_str
+        uptime_str,
+    );
+
+    // Breathing glow on the border
+    let glow = animation::breathing(phase);
+    let border_color = crate::ui::theme::lerp_color(
+        theme.border_dim,
+        theme.header_accent,
+        glow,
     );
 
     let header = Paragraph::new(vec![
         Line::from(Span::styled(
-            scrolling,
-            Style::default().fg(header_color).add_modifier(Modifier::DIM),
+            scan,
+            Style::default()
+                .fg(Color::Rgb(
+                    (nr as f64 * 0.4) as u8,
+                    (ng as f64 * 0.4) as u8,
+                    (nb as f64 * 0.4) as u8,
+                ))
+                .add_modifier(Modifier::DIM),
         )),
         Line::from(Span::styled(
             format!("{:^width$}", title_text, width = bar_width),
             Style::default()
-                .fg(header_color)
+                .fg(title_color)
                 .add_modifier(Modifier::BOLD),
         )),
     ])
+    .block(
+        Block::default()
+            .borders(Borders::BOTTOM)
+            .border_style(Style::default().fg(border_color))
+            .border_set(symbols::border::DOUBLE),
+    )
     .style(Style::default().bg(theme.bg_panel));
 
     frame.render_widget(header, area);
@@ -57,7 +86,12 @@ pub fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw_cpu(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
-    let block = styled_block(" CPU Usage ", theme);
+    let tick = app.tick_count;
+    let phase = app.phase;
+
+    // Animated border that glows based on CPU load
+    let cpu_activity = app.cpu.global / 100.0;
+    let block = animated_block(" ⚡ CPU Usage ", theme, phase, cpu_activity);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -65,12 +99,13 @@ pub fn draw_cpu(frame: &mut Frame, area: Rect, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(2), // stats line
-            Constraint::Min(4),   // sparkline
+            Constraint::Length(2), // activity bar
+            Constraint::Min(3),   // sparkline
             Constraint::Length(4), // per-core bars
         ])
         .split(inner);
 
-    // ── Stats line ───────────────────────────────────────────────────────
+    // ── Stats line with animated values ──────────────────────────────────
     let (l1, l5, l15) = app.cpu.load_avg;
     let temp_str = app
         .cpu
@@ -78,25 +113,48 @@ pub fn draw_cpu(frame: &mut Frame, area: Rect, app: &App) {
         .map(|t| format!(" {:.0}°C", t))
         .unwrap_or_default();
 
+    let cpu_color = theme.gradient_color(cpu_activity);
+    let spin = animation::spinner(tick);
+
     let stats = Paragraph::new(vec![
         Line::from(vec![
             Span::styled(
-                format!(" Global: {:.1}%", app.cpu.global),
+                format!(" {} Global: ", spin),
+                Style::default().fg(theme.text_dim),
+            ),
+            Span::styled(
+                format!("{:.1}%", app.cpu.global),
                 Style::default()
-                    .fg(theme.accent_success)
+                    .fg(cpu_color)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("  Load: {:.2} {:.2} {:.2}", l1, l5, l15),
                 Style::default().fg(theme.text_dim),
             ),
-            Span::styled(temp_str, Style::default().fg(theme.accent_warning)),
+            Span::styled(
+                temp_str,
+                Style::default().fg(if app.cpu.temperature.unwrap_or(0.0) > 80.0 {
+                    theme.accent_error
+                } else {
+                    theme.accent_warning
+                }),
+            ),
         ]),
     ]);
     frame.render_widget(stats, chunks[0]);
 
+    // ── Animated activity bar ────────────────────────────────────────────
+    let bar_width = chunks[1].width.saturating_sub(2) as usize;
+    let activity_str = animation::activity_indicator(cpu_activity, bar_width, tick);
+    let activity_bar = Paragraph::new(Line::from(Span::styled(
+        format!(" {}", activity_str),
+        Style::default().fg(cpu_color),
+    )));
+    frame.render_widget(activity_bar, chunks[1]);
+
     // ── Scrolling sparkline ──────────────────────────────────────────────
-    let width = chunks[1].width as usize;
+    let width = chunks[2].width as usize;
     let history = app.history.windowed_data(&app.history.cpu_global);
     let data: Vec<u64> = history
         .iter()
@@ -106,23 +164,23 @@ pub fn draw_cpu(frame: &mut Frame, area: Rect, app: &App) {
         .map(|v| *v as u64)
         .collect();
 
-    let color = theme.gradient_color(app.cpu.global / 100.0);
     let sparkline = Sparkline::default()
         .data(&data)
         .max(100)
-        .style(Style::default().fg(color));
-    frame.render_widget(sparkline, chunks[1]);
+        .style(Style::default().fg(cpu_color));
+    frame.render_widget(sparkline, chunks[2]);
 
-    // ── Per-core mini bars ───────────────────────────────────────────────
+    // ── Per-core animated bars ───────────────────────────────────────────
     let cores = &app.cpu.per_core;
-    let max_show = (chunks[2].width as usize / 6).min(cores.len());
-    let bar_spans: Vec<Span> = cores
+    let core_bars = animation::core_activity_bars(cores, tick);
+    let max_show = (chunks[3].width as usize / 5).min(core_bars.len());
+
+    let bar_spans: Vec<Span> = core_bars
         .iter()
         .take(max_show)
         .enumerate()
-        .flat_map(|(i, &usage)| {
-            let color = theme.gradient_color(usage / 100.0);
-            let bar_char = utils::bar_glyph(usage / 100.0);
+        .flat_map(|(i, (bar_char, ratio))| {
+            let color = theme.gradient_color(*ratio);
             vec![
                 Span::styled(
                     format!("{:>2}", i),
@@ -142,11 +200,16 @@ pub fn draw_cpu(frame: &mut Frame, area: Rect, app: &App) {
     let cores_para = Paragraph::new(vec![
         Line::from(bar_spans),
         Line::from(Span::styled(
-            format!(" Cores: {}{}", cores.len(), freq_str),
+            format!(
+                " {} Cores: {}{}",
+                animation::dot_spinner(tick),
+                cores.len(),
+                freq_str
+            ),
             Style::default().fg(theme.text_dim),
         )),
     ]);
-    frame.render_widget(cores_para, chunks[2]);
+    frame.render_widget(cores_para, chunks[3]);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -155,7 +218,11 @@ pub fn draw_cpu(frame: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw_memory_disk(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
-    let block = styled_block(" Memory & Disk ", theme);
+    let tick = app.tick_count;
+    let phase = app.phase;
+
+    let mem_activity = app.memory.usage_ratio();
+    let block = animated_block(" 🧠 Memory & Disk ", theme, phase, mem_activity);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -164,15 +231,19 @@ pub fn draw_memory_disk(frame: &mut Frame, area: Rect, app: &App) {
         .constraints([
             Constraint::Length(3), // RAM gauge
             Constraint::Length(3), // Swap gauge
-            Constraint::Length(2), // Cache/Buffer info
+            Constraint::Length(3), // Cache/Buffer info + sparkline
             Constraint::Min(2),   // Disk list
         ])
         .split(inner);
 
     let mem = &app.memory;
 
-    // ── RAM gauge ────────────────────────────────────────────────────────
+    // ── RAM gauge with shimmer ───────────────────────────────────────────
     let mem_ratio = mem.usage_ratio();
+    let bar_w = chunks[0].width.saturating_sub(4) as usize;
+    let shimmer = animation::shimmer_bar(mem_ratio, bar_w, tick);
+    let mem_color = theme.gradient_color(mem_ratio);
+
     let mem_label = format!(
         "RAM: {:.1} / {:.1} GB ({:.0}%)",
         utils::bytes_to_gib(mem.used),
@@ -180,71 +251,76 @@ pub fn draw_memory_disk(frame: &mut Frame, area: Rect, app: &App) {
         mem_ratio * 100.0
     );
 
-    let pulse_mod = animation::fast_pulse(app.phase) * 0.02 + 0.98;
-    let display_ratio = (mem_ratio * pulse_mod).clamp(0.0, 1.0);
-
-    let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::NONE))
-        .gauge_style(
-            Style::default()
-                .fg(theme.gradient_color(mem_ratio))
-                .bg(theme.bg_panel),
-        )
-        .ratio(display_ratio)
-        .label(Span::styled(
-            mem_label,
+    let ram_display = Paragraph::new(vec![
+        Line::from(Span::styled(
+            format!(" {}", mem_label),
             Style::default()
                 .fg(theme.text_bright)
                 .add_modifier(Modifier::BOLD),
-        ));
-    frame.render_widget(gauge, chunks[0]);
+        )),
+        Line::from(Span::styled(
+            format!(" {}", shimmer),
+            Style::default().fg(mem_color),
+        )),
+    ]);
+    frame.render_widget(ram_display, chunks[0]);
 
     // ── Swap gauge ───────────────────────────────────────────────────────
     let swap_ratio = mem.swap_ratio();
+    let swap_shimmer = animation::gradient_bar(swap_ratio, bar_w, tick);
     let swap_label = format!(
         "SWP: {:.1} / {:.1} GB ({:.0}%)",
         utils::bytes_to_gib(mem.swap_used),
         utils::bytes_to_gib(mem.swap_total),
         swap_ratio * 100.0
     );
-    let swap_gauge = Gauge::default()
-        .block(Block::default().borders(Borders::NONE))
-        .gauge_style(
-            Style::default()
-                .fg(theme.accent_secondary)
-                .bg(theme.bg_panel),
-        )
-        .ratio(swap_ratio.clamp(0.0, 1.0))
-        .label(Span::styled(
-            swap_label,
+    let swap_display = Paragraph::new(vec![
+        Line::from(Span::styled(
+            format!(" {}", swap_label),
             Style::default()
                 .fg(theme.text_bright)
                 .add_modifier(Modifier::BOLD),
-        ));
-    frame.render_widget(swap_gauge, chunks[1]);
+        )),
+        Line::from(Span::styled(
+            format!(" {}", swap_shimmer),
+            Style::default().fg(theme.accent_secondary),
+        )),
+    ]);
+    frame.render_widget(swap_display, chunks[1]);
 
-    // ── Cache/Buffers info ───────────────────────────────────────────────
-    let cache_info = Paragraph::new(Line::from(vec![
-        Span::styled(" Cache: ", Style::default().fg(theme.text_dim)),
-        Span::styled(
-            utils::format_bytes_total(mem.cached),
-            Style::default().fg(theme.accent_primary),
-        ),
-        Span::styled("  Buf: ", Style::default().fg(theme.text_dim)),
-        Span::styled(
-            utils::format_bytes_total(mem.buffers),
-            Style::default().fg(theme.accent_primary),
-        ),
-    ]));
+    // ── Cache/Buffers with braille sparkline ─────────────────────────────
+    let mem_history = app.history.windowed_data(&app.history.memory_ratio);
+    let mem_data: Vec<f64> = mem_history.iter().rev().take(20).rev().copied().collect();
+    let braille = animation::braille_sparkline(&mem_data, 1.0, 20);
+
+    let cache_info = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(" Cache: ", Style::default().fg(theme.text_dim)),
+            Span::styled(
+                utils::format_bytes_total(mem.cached),
+                Style::default().fg(theme.accent_primary),
+            ),
+            Span::styled("  Buf: ", Style::default().fg(theme.text_dim)),
+            Span::styled(
+                utils::format_bytes_total(mem.buffers),
+                Style::default().fg(theme.accent_primary),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(" Trend: ", Style::default().fg(theme.text_dim)),
+            Span::styled(braille, Style::default().fg(theme.accent_secondary)),
+        ]),
+    ]);
     frame.render_widget(cache_info, chunks[2]);
 
-    // ── Disk list ────────────────────────────────────────────────────────
+    // ── Disk list with animated bars ─────────────────────────────────────
     let disk_lines: Vec<Line> = app
         .disks
         .iter()
         .map(|d| {
             let ratio = d.usage_ratio();
             let color = theme.gradient_color(ratio);
+            let mini = animation::shimmer_bar(ratio, 10, tick);
             Line::from(vec![
                 Span::styled(
                     format!(" {} ", d.mount),
@@ -262,16 +338,13 @@ pub fn draw_memory_disk(frame: &mut Frame, area: Rect, app: &App) {
                     ),
                     Style::default().fg(color),
                 ),
-                Span::styled(
-                    format!("[{}]", utils::mini_bar(ratio, 10)),
-                    Style::default().fg(color),
-                ),
+                Span::styled(format!("[{}]", mini), Style::default().fg(color)),
             ])
         })
         .collect();
 
     let disk_para = Paragraph::new(disk_lines).wrap(Wrap { trim: true });
-    frame.render_widget(disk_para, chunks[2 + 1]);
+    frame.render_widget(disk_para, chunks[3]);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -280,16 +353,34 @@ pub fn draw_memory_disk(frame: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw_network(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
-    let block = styled_block(" Network ", theme);
+    let tick = app.tick_count;
+    let phase = app.phase;
+
+    let net_activity = ((app.net.rx_speed + app.net.tx_speed) / 1_048_576.0).clamp(0.0, 1.0);
+    let block = animated_block(" 🌐 Network ", theme, phase, net_activity);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(3)])
+        .constraints([
+            Constraint::Length(4), // Speed readouts with indicators
+            Constraint::Min(3),   // RX sparkline
+        ])
         .split(inner);
 
-    // Speed readouts
+    // ── Speed readouts with animated indicators ──────────────────────────
+    let rx_indicator = animation::activity_indicator(
+        (app.net.rx_speed / 1_048_576.0).clamp(0.0, 1.0),
+        8,
+        tick,
+    );
+    let tx_indicator = animation::activity_indicator(
+        (app.net.tx_speed / 1_048_576.0).clamp(0.0, 1.0),
+        8,
+        tick,
+    );
+
     let speed_text = Paragraph::new(vec![
         Line::from(vec![
             Span::styled(" ▼ RX: ", Style::default().fg(theme.accent_success)),
@@ -299,10 +390,7 @@ pub fn draw_network(frame: &mut Frame, area: Rect, app: &App) {
                     .fg(theme.accent_success)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                format!("  tot: {}", utils::format_bytes_total(app.net.rx_bytes)),
-                Style::default().fg(theme.text_dim),
-            ),
+            Span::styled(format!(" {}", rx_indicator), Style::default().fg(theme.accent_success)),
         ]),
         Line::from(vec![
             Span::styled(" ▲ TX: ", Style::default().fg(theme.accent_warning)),
@@ -312,16 +400,30 @@ pub fn draw_network(frame: &mut Frame, area: Rect, app: &App) {
                     .fg(theme.accent_warning)
                     .add_modifier(Modifier::BOLD),
             ),
+            Span::styled(format!(" {}", tx_indicator), Style::default().fg(theme.accent_warning)),
+        ]),
+        Line::from(vec![
             Span::styled(
-                format!("  tot: {}", utils::format_bytes_total(app.net.tx_bytes)),
+                format!(
+                    " {} tot: {}  │  tot: {}",
+                    animation::dot_spinner(tick),
+                    utils::format_bytes_total(app.net.rx_bytes),
+                    utils::format_bytes_total(app.net.tx_bytes)
+                ),
                 Style::default().fg(theme.text_dim),
             ),
         ]),
     ]);
     frame.render_widget(speed_text, chunks[0]);
 
-    // RX sparkline
-    let width = chunks[1].width as usize;
+    // ── Dual sparklines for RX/TX ────────────────────────────────────────
+    let sparkline_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(chunks[1]);
+
+    let width = sparkline_chunks[0].width as usize;
+
     let rx_history = app.history.windowed_data(&app.history.net_rx);
     let rx_data: Vec<u64> = rx_history
         .iter()
@@ -330,11 +432,23 @@ pub fn draw_network(frame: &mut Frame, area: Rect, app: &App) {
         .rev()
         .map(|v| (*v / 1024.0) as u64)
         .collect();
-
-    let sparkline = Sparkline::default()
+    let rx_spark = Sparkline::default()
         .data(&rx_data)
         .style(Style::default().fg(theme.accent_success));
-    frame.render_widget(sparkline, chunks[1]);
+    frame.render_widget(rx_spark, sparkline_chunks[0]);
+
+    let tx_history = app.history.windowed_data(&app.history.net_tx);
+    let tx_data: Vec<u64> = tx_history
+        .iter()
+        .rev()
+        .take(width)
+        .rev()
+        .map(|v| (*v / 1024.0) as u64)
+        .collect();
+    let tx_spark = Sparkline::default()
+        .data(&tx_data)
+        .style(Style::default().fg(theme.accent_warning));
+    frame.render_widget(tx_spark, sparkline_chunks[1]);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -343,7 +457,10 @@ pub fn draw_network(frame: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw_network_detail(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
-    let block = styled_block(" Network Inspector ", theme);
+    let tick = app.tick_count;
+    let phase = app.phase;
+    let net_activity = ((app.net.rx_speed + app.net.tx_speed) / 1_048_576.0).clamp(0.0, 1.0);
+    let block = animated_block(" 🌐 Network Inspector ", theme, phase, net_activity);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -359,6 +476,10 @@ pub fn draw_network_detail(frame: &mut Frame, area: Rect, app: &App) {
     // Aggregate stats with sparkline
     let agg_text = Paragraph::new(vec![
         Line::from(vec![
+            Span::styled(
+                format!(" {} ", animation::dot_spinner(tick)),
+                Style::default().fg(theme.accent_primary),
+            ),
             Span::styled(" ▼ RX: ", Style::default().fg(theme.accent_success)),
             Span::styled(
                 utils::format_bytes_speed(app.net.rx_speed),
@@ -495,7 +616,10 @@ pub fn draw_network_detail(frame: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw_disk_detail(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
-    let block = styled_block(" Disk & IO Monitor ", theme);
+    let phase = app.phase;
+    let tick = app.tick_count;
+    let io_activity = (app.disk_io.io_wait_pct / 100.0).clamp(0.0, 1.0);
+    let block = animated_block(" 💾 Disk & IO Monitor ", theme, phase, io_activity);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -511,6 +635,10 @@ pub fn draw_disk_detail(frame: &mut Frame, area: Rect, app: &App) {
     let io = &app.disk_io;
     let io_text = Paragraph::new(vec![
         Line::from(vec![
+            Span::styled(
+                format!(" {} ", animation::dot_spinner(tick)),
+                Style::default().fg(theme.accent_primary),
+            ),
             Span::styled(" Read: ", Style::default().fg(theme.accent_success)),
             Span::styled(
                 utils::format_bytes_speed(io.read_speed),
@@ -598,15 +726,26 @@ pub fn draw_disk_detail(frame: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw_gpu(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
-    let block = styled_block(" GPU Monitor ", theme);
+    let tick = app.tick_count;
+    let phase = app.phase;
+    let gpu_activity = if app.gpu.available && !app.gpu.gpus.is_empty() {
+        app.gpu.gpus[0].usage_pct as f64 / 100.0
+    } else {
+        0.0
+    };
+    let block = animated_block(" 🎮 GPU Monitor ", theme, phase, gpu_activity);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     if !app.gpu.available {
-        let msg = Paragraph::new(Line::from(Span::styled(
-            " No GPU detected (NVIDIA/AMD)",
-            Style::default().fg(theme.text_dim),
-        )));
+        let wave = animation::wave_pattern(tick, inner.width as usize);
+        let msg = Paragraph::new(vec![
+            Line::from(Span::styled(
+                " No GPU detected (NVIDIA/AMD)",
+                Style::default().fg(theme.text_dim),
+            )),
+            Line::from(Span::styled(wave, Style::default().fg(theme.border_dim))),
+        ]);
         frame.render_widget(msg, inner);
         return;
     }
@@ -618,36 +757,55 @@ pub fn draw_gpu(frame: &mut Frame, area: Rect, app: &App) {
         } else {
             0.0
         };
+        let usage_ratio = gpu.usage_pct as f64 / 100.0;
+        let usage_bar_w = 20;
+        let usage_bar = animation::shimmer_bar(usage_ratio, usage_bar_w, tick);
+        let vram_bar = animation::gradient_bar(mem_ratio, usage_bar_w, tick);
 
         lines.push(Line::from(vec![
             Span::styled(
-                format!(" {} ", gpu.name),
+                format!(" {} {} ", animation::spinner(tick), gpu.name),
                 Style::default()
                     .fg(theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
             ),
         ]));
         lines.push(Line::from(vec![
+            Span::styled("  Usage: ", Style::default().fg(theme.text_dim)),
             Span::styled(
-                format!("  Usage: {:.0}%", gpu.usage_pct),
-                Style::default().fg(theme.gradient_color(gpu.usage_pct as f64 / 100.0)),
+                format!("{:.0}% ", gpu.usage_pct),
+                Style::default().fg(theme.gradient_color(usage_ratio)),
             ),
             Span::styled(
+                format!("[{}]", usage_bar),
+                Style::default().fg(theme.gradient_color(usage_ratio)),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("  VRAM:  ", Style::default().fg(theme.text_dim)),
+            Span::styled(
                 format!(
-                    "  VRAM: {}/{}MiB [{:.0}%]",
-                    gpu.mem_used_mib,
-                    gpu.mem_total_mib,
-                    mem_ratio * 100.0
+                    "{}/{}MiB ",
+                    gpu.mem_used_mib, gpu.mem_total_mib
                 ),
+                Style::default().fg(theme.accent_secondary),
+            ),
+            Span::styled(
+                format!("[{}]", vram_bar),
                 Style::default().fg(theme.accent_secondary),
             ),
         ]));
 
         let mut detail_spans = Vec::new();
         if let Some(temp) = gpu.temperature {
+            let temp_warn = temp > 80.0;
             detail_spans.push(Span::styled(
-                format!("  Temp: {:.0}°C", temp),
-                Style::default().fg(if temp > 80.0 {
+                format!(
+                    "  Temp: {:.0}°C{}",
+                    temp,
+                    if temp_warn && animation::flicker(tick, 8) { " ⚠" } else { "" }
+                ),
+                Style::default().fg(if temp_warn {
                     theme.accent_error
                 } else {
                     theme.accent_warning
@@ -681,8 +839,9 @@ pub fn draw_gpu(frame: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw_history(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
-    let title = format!(" History [{}] ", app.history.window.label());
-    let block = styled_block(&title, theme);
+    let phase = app.phase;
+    let title = format!(" 📊 History [{}] ", app.history.window.label());
+    let block = animated_block(&title, theme, phase, 0.3);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -716,10 +875,10 @@ fn draw_history_sparkline(
     color: ratatui::style::Color,
 ) {
     let theme = &app.theme;
+    let tick = app.tick_count;
     let width = area.width as usize;
     let data_vec = app.history.windowed_data(ring);
 
-    // For ratio-based metrics (0.0–1.0), scale to percentage
     let scale = if max_val == 1 { 100.0 } else { 1.0 };
 
     let data: Vec<u64> = data_vec
@@ -739,13 +898,14 @@ fn draw_history_sparkline(
     };
 
     let latest = data.last().copied().unwrap_or(0);
+    let spark_char = animation::spinner(tick);
     let block = Block::default()
         .title(Span::styled(
-            format!(" {} ({}) ", label, latest),
+            format!(" {} {} ({}) ", spark_char, label, latest),
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::TOP)
-        .border_style(Style::default().fg(theme.border_dim));
+        .border_style(theme.glow_border_style(app.phase));
 
     let sparkline = Sparkline::default()
         .block(block)
@@ -761,14 +921,23 @@ fn draw_history_sparkline(
 
 pub fn draw_processes(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
+    let tick = app.tick_count;
+    let phase = app.phase;
     let sort_label = app.sort_mode.label();
     let filter_info = if app.filter_active {
         format!(" filter: \"{}\"", app.filter_text)
     } else {
         String::new()
     };
-    let title = format!(" Processes [sort: {}]{} ", sort_label, filter_info);
-    let block = styled_block(&title, theme);
+    let proc_count = app.filtered_processes().len();
+    let title = format!(
+        " {} Processes [{}] sort:{}{} ",
+        animation::dot_spinner(tick),
+        proc_count,
+        sort_label,
+        filter_info
+    );
+    let block = animated_block(&title, theme, phase, 0.2);
 
     let header_cells = ["PID", "User", "Name", "CPU%", "MEM(MB)", "Thr", "Nice", "Status"]
         .iter()
@@ -790,9 +959,15 @@ pub fn draw_processes(frame: &mut Frame, area: Rect, app: &App) {
         .iter()
         .skip(app.process_scroll)
         .take(visible_height)
-        .map(|p| {
+        .enumerate()
+        .map(|(idx, p)| {
             let cpu_color = if p.anomaly.high_cpu {
-                theme.accent_error
+                // Flicker effect for anomalous processes
+                if animation::flicker(tick, 6) {
+                    theme.accent_error
+                } else {
+                    theme.accent_warning
+                }
             } else {
                 theme.gradient_color(p.cpu as f64 / 100.0)
             };
@@ -800,11 +975,18 @@ pub fn draw_processes(frame: &mut Frame, area: Rect, app: &App) {
             let name_style = if p.anomaly.suspicious {
                 Style::default()
                     .fg(theme.accent_error)
-                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
             } else if p.anomaly.high_memory {
                 Style::default().fg(theme.accent_warning)
             } else {
                 Style::default().fg(theme.text_bright)
+            };
+
+            // Subtle alternating row background
+            let row_bg = if idx % 2 == 0 {
+                theme.bg_dark
+            } else {
+                theme.bg_panel
             };
 
             let threads_str = p
@@ -824,6 +1006,7 @@ pub fn draw_processes(frame: &mut Frame, area: Rect, app: &App) {
                 Cell::from(format!("{}", p.nice)).style(Style::default().fg(theme.text_dim)),
                 Cell::from(p.status.clone()).style(Style::default().fg(theme.text_dim)),
             ])
+            .style(Style::default().bg(row_bg))
         })
         .collect();
 
@@ -842,7 +1025,12 @@ pub fn draw_processes(frame: &mut Frame, area: Rect, app: &App) {
     )
     .header(header)
     .block(block)
-    .row_highlight_style(theme.highlight_style());
+    .row_highlight_style(
+        Style::default()
+            .fg(theme.bg_dark)
+            .bg(theme.accent_primary)
+            .add_modifier(Modifier::BOLD),
+    );
 
     frame.render_widget(table, area);
 }
@@ -853,45 +1041,66 @@ pub fn draw_processes(frame: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
+    let tick = app.tick_count;
 
     let key_style = Style::default()
         .fg(theme.accent_tertiary)
         .add_modifier(Modifier::BOLD);
     let desc_style = Style::default().fg(theme.text_dim);
+    let sep_style = Style::default().fg(theme.border_dim);
 
     let mut hints = vec![
         Span::styled(" q", key_style),
-        Span::styled(" Quit ", desc_style),
+        Span::styled("Quit", desc_style),
+        Span::styled("│", sep_style),
         Span::styled("s", key_style),
-        Span::styled(" Sort ", desc_style),
+        Span::styled("Sort", desc_style),
+        Span::styled("│", sep_style),
         Span::styled("f", key_style),
-        Span::styled(" Filter ", desc_style),
+        Span::styled("Filt", desc_style),
+        Span::styled("│", sep_style),
         Span::styled("k", key_style),
-        Span::styled(" Kill ", desc_style),
+        Span::styled("Kill", desc_style),
+        Span::styled("│", sep_style),
         Span::styled("m", key_style),
-        Span::styled(" Mode ", desc_style),
+        Span::styled("Mode", desc_style),
+        Span::styled("│", sep_style),
         Span::styled("t", key_style),
-        Span::styled(" Theme ", desc_style),
+        Span::styled("Theme", desc_style),
+        Span::styled("│", sep_style),
         Span::styled("n", key_style),
-        Span::styled(" Net ", desc_style),
+        Span::styled("Net", desc_style),
+        Span::styled("│", sep_style),
         Span::styled("d", key_style),
-        Span::styled(" Disk ", desc_style),
+        Span::styled("Disk", desc_style),
+        Span::styled("│", sep_style),
         Span::styled("g", key_style),
-        Span::styled(" GPU ", desc_style),
+        Span::styled("GPU", desc_style),
+        Span::styled("│", sep_style),
         Span::styled("h", key_style),
-        Span::styled(" Hist ", desc_style),
+        Span::styled("Hist", desc_style),
     ];
 
     if app.config.security.enabled {
-        hints.push(Span::styled(" [SEC]", Style::default().fg(theme.accent_error)));
+        hints.push(Span::styled(
+            " [SEC]",
+            Style::default()
+                .fg(if animation::flicker(tick, 10) {
+                    theme.accent_error
+                } else {
+                    theme.accent_warning
+                })
+                .add_modifier(Modifier::BOLD),
+        ));
     }
 
     hints.push(Span::styled(
-        format!("  Theme:{}", theme.id.label()),
-        desc_style,
+        format!("  {}:{}", animation::dot_spinner(tick), theme.id.label()),
+        Style::default().fg(theme.accent_primary),
     ));
 
-    let footer = Paragraph::new(Line::from(hints)).style(Style::default().bg(theme.bg_panel));
+    let footer = Paragraph::new(Line::from(hints))
+        .style(Style::default().bg(theme.bg_panel));
     frame.render_widget(footer, area);
 }
 
@@ -901,27 +1110,34 @@ pub fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw_filter_input(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
+    let tick = app.tick_count;
 
-    // Draw a centered input box
+    // Draw a centered input box with glowing border
     let width = 50.min(area.width.saturating_sub(4));
     let height = 3;
     let x = (area.width.saturating_sub(width)) / 2 + area.x;
     let y = (area.height.saturating_sub(height)) / 2 + area.y;
     let input_area = Rect::new(x, y, width, height);
 
+    let glow_color = theme.glow_border_style(app.phase);
+
     let block = Block::default()
         .title(Span::styled(
-            " Filter (regex) ",
+            format!(" {} Filter (regex) ", animation::dot_spinner(tick)),
             Style::default()
                 .fg(theme.accent_primary)
                 .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.accent_primary))
+        .border_style(glow_color)
+        .border_set(symbols::border::DOUBLE)
         .style(Style::default().bg(theme.bg_panel));
 
+    // Blinking cursor
+    let cursor = if animation::flicker(tick, 8) { "▌" } else { " " };
+
     let input = Paragraph::new(Line::from(Span::styled(
-        format!("{}_", app.filter_text),
+        format!("{}{}", app.filter_text, cursor),
         Style::default()
             .fg(theme.text_bright)
             .add_modifier(Modifier::BOLD),
@@ -938,18 +1154,27 @@ pub fn draw_filter_input(frame: &mut Frame, area: Rect, app: &App) {
 pub fn draw_status_message(frame: &mut Frame, area: Rect, app: &App) {
     if let Some(ref msg) = app.status_message {
         let theme = &app.theme;
-        let width = (msg.len() as u16 + 4).min(area.width.saturating_sub(4));
+        let tick = app.tick_count;
+        let width = (msg.len() as u16 + 8).min(area.width.saturating_sub(4));
         let x = (area.width.saturating_sub(width)) / 2 + area.x;
-        let y = area.height.saturating_sub(3) + area.y;
-        let msg_area = Rect::new(x, y, width, 1);
+        let y = area.height.saturating_sub(4) + area.y;
+        let msg_area = Rect::new(x, y, width, 3);
+
+        let (nr, ng, nb) = animation::neon_cycle(app.phase);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(nr, ng, nb)))
+            .border_set(symbols::border::ROUNDED)
+            .style(Style::default().bg(theme.bg_panel));
 
         let para = Paragraph::new(Line::from(Span::styled(
-            format!(" {} ", msg),
+            format!(" {} {} ", animation::dot_spinner(tick), msg),
             Style::default()
                 .fg(theme.accent_warning)
                 .add_modifier(Modifier::BOLD),
         )))
-        .style(Style::default().bg(theme.bg_panel));
+        .block(block);
 
         frame.render_widget(para, msg_area);
     }
@@ -959,10 +1184,36 @@ pub fn draw_status_message(frame: &mut Frame, area: Rect, app: &App) {
 //  HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
 
+#[allow(dead_code)]
 fn styled_block<'a>(title: &'a str, theme: &Theme) -> Block<'a> {
     Block::default()
         .title(Span::styled(title, theme.title_style()))
         .borders(Borders::ALL)
         .border_style(theme.border_style())
+        .style(Style::default().bg(theme.bg_dark))
+}
+
+/// Animated block with glowing border whose intensity tracks an activity metric.
+fn animated_block<'a>(title: &'a str, theme: &'a Theme, phase: f64, activity: f64) -> Block<'a> {
+    let (r, g, b) = animation::border_glow_color(activity, phase);
+    let glow_color = Color::Rgb(r, g, b);
+
+    // Lerp between normal border and glow based on activity
+    let border_color = crate::ui::theme::lerp_color(theme.border_dim, glow_color, activity);
+
+    Block::default()
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(crate::ui::theme::lerp_color(
+                    theme.accent_primary,
+                    glow_color,
+                    animation::breathing(phase) * 0.3,
+                ))
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color))
+        .border_set(symbols::border::ROUNDED)
         .style(Style::default().bg(theme.bg_dark))
 }
