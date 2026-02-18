@@ -6,8 +6,10 @@ pub mod layout;
 pub mod panels;
 pub mod theme;
 
-use ratatui::style::Style;
-use ratatui::widgets::Block;
+use ratatui::layout::Rect;
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -22,6 +24,11 @@ pub fn render(frame: &mut Frame, app: &App) {
     let bg = Block::default().style(Style::default().bg(theme.bg_dark));
     frame.render_widget(bg, size);
 
+    // Render subtle animated wave pattern at the bottom for atmosphere
+    if app.config.display.animations {
+        render_ambient_effect(frame, size, app);
+    }
+
     match app.layout_mode {
         LayoutMode::Detailed => render_detailed(frame, app, size),
         LayoutMode::Compact => render_compact(frame, app, size),
@@ -34,6 +41,30 @@ pub fn render(frame: &mut Frame, app: &App) {
         panels::draw_filter_input(frame, size, app);
     }
     panels::draw_status_message(frame, size, app);
+}
+
+/// Render a subtle ambient background effect — a dim wave at the very bottom.
+fn render_ambient_effect(frame: &mut Frame, area: Rect, app: &App) {
+    let tick = app.tick_count;
+    let theme = &app.theme;
+
+    // Only if there's room
+    if area.height < 8 {
+        return;
+    }
+
+    let wave_y = area.height.saturating_sub(1);
+    let wave_area = Rect::new(area.x, wave_y, area.width, 1);
+    let wave = animation::wave_pattern(tick, area.width as usize);
+
+    let (r, g, b) = animation::neon_cycle(app.phase);
+    let dim_color = Color::Rgb(r / 5, g / 5, b / 5);
+
+    let wave_line = Paragraph::new(Line::from(Span::styled(
+        wave,
+        Style::default().fg(dim_color).bg(theme.bg_dark),
+    )));
+    frame.render_widget(wave_line, wave_area);
 }
 
 // ── Detailed layout ──────────────────────────────────────────────────────────
