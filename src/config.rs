@@ -40,7 +40,7 @@ pub struct GeneralConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DisplayConfig {
-    /// Active theme: "neon", "monochrome", "retro".
+    /// Active theme: "neon", "monochrome", "retro", "synthwave", "ocean".
     pub theme: String,
     /// Enable animations globally.
     pub animations: bool,
