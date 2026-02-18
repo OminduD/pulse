@@ -11,6 +11,7 @@ use ratatui::{
 };
 
 use crate::app::App;
+use crate::remote::ConnectionStatus;
 use crate::ui::animation;
 use crate::ui::theme::Theme;
 use crate::utils;
@@ -1036,6 +1037,242 @@ pub fn draw_processes(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+//  REMOTE HOSTS PANEL
+// ══════════════════════════════════════════════════════════════════════════════
+
+pub fn draw_remote(frame: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    let tick = app.tick_count;
+    let phase = app.phase;
+
+    let connected_count = app
+        .remote_hosts
+        .values()
+        .filter(|h| h.status == ConnectionStatus::Connected)
+        .count();
+    let total = app.remote_hosts.len();
+    let activity = if total > 0 {
+        connected_count as f64 / total as f64
+    } else {
+        0.0
+    };
+
+    let title = format!(
+        " {} Remote Hosts [{}/{}] ",
+        animation::dot_spinner(tick),
+        connected_count,
+        total
+    );
+    let block = animated_block(&title, theme, phase, activity);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if app.remote_hosts.is_empty() {
+        let wave = animation::wave_pattern(tick, inner.width as usize);
+        let msg = Paragraph::new(vec![
+            Line::from(Span::styled(
+                " No remote hosts configured",
+                Style::default().fg(theme.text_dim),
+            )),
+            Line::from(Span::styled(
+                " Add hosts in ~/.config/pulse/config.toml [remote]",
+                Style::default().fg(theme.text_dim),
+            )),
+            Line::from(Span::styled(wave, Style::default().fg(theme.border_dim))),
+        ]);
+        frame.render_widget(msg, inner);
+        return;
+    }
+
+    // Sort hosts deterministically
+    let mut hosts: Vec<_> = app.remote_hosts.iter().collect();
+    hosts.sort_by_key(|(addr, _)| (*addr).clone());
+
+    // We'll display each host as a mini dashboard section
+    let host_count = hosts.len();
+    let per_host_height = if host_count > 0 {
+        (inner.height as usize / host_count).max(4)
+    } else {
+        4
+    };
+
+    let constraints: Vec<Constraint> = hosts
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            if i < host_count - 1 {
+                Constraint::Length(per_host_height as u16)
+            } else {
+                Constraint::Min(4)
+            }
+        })
+        .collect();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(inner);
+
+    for (i, (_addr, host)) in hosts.iter().enumerate() {
+        if i >= chunks.len() {
+            break;
+        }
+        draw_remote_host(frame, chunks[i], app, host, tick, phase);
+    }
+}
+
+fn draw_remote_host(
+    frame: &mut Frame,
+    area: Rect,
+    app: &App,
+    host: &crate::remote::RemoteHost,
+    tick: u64,
+    _phase: f64,
+) {
+    let theme = &app.theme;
+
+    let (status_icon, status_color) = match &host.status {
+        ConnectionStatus::Connected => ("●", theme.accent_success),
+        ConnectionStatus::Connecting => {
+            // Blink the icon for connecting state
+            ("◌", theme.accent_warning)
+        }
+        ConnectionStatus::Error(_) => ("✖", theme.accent_error),
+        ConnectionStatus::Disconnected => ("○", theme.text_dim),
+    };
+
+    let mut lines = Vec::new();
+
+    // Host header line
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!(" {} ", status_icon),
+            Style::default().fg(status_color),
+        ),
+        Span::styled(
+            host.label(),
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  ({})", host.address),
+            Style::default().fg(theme.text_dim),
+        ),
+    ]));
+
+    // Show data if connected
+    if let Some(ref packet) = host.latest {
+        let cpu_ratio = packet.cpu.global / 100.0;
+        let cpu_color = theme.gradient_color(cpu_ratio);
+        let mem_ratio = packet.mem.usage_ratio();
+        let mem_color = theme.gradient_color(mem_ratio);
+
+        let cpu_bar_w = 15.min(area.width.saturating_sub(30) as usize);
+        let cpu_bar = animation::shimmer_bar(cpu_ratio, cpu_bar_w, tick);
+        let mem_bar = animation::shimmer_bar(mem_ratio, cpu_bar_w, tick);
+
+        lines.push(Line::from(vec![
+            Span::styled("   CPU: ", Style::default().fg(theme.text_dim)),
+            Span::styled(
+                format!("{:5.1}% ", packet.cpu.global),
+                Style::default()
+                    .fg(cpu_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("[{}]", cpu_bar),
+                Style::default().fg(cpu_color),
+            ),
+            Span::styled("  MEM: ", Style::default().fg(theme.text_dim)),
+            Span::styled(
+                format!(
+                    "{:.1}/{:.1}G ",
+                    crate::utils::bytes_to_gib(packet.mem.used),
+                    crate::utils::bytes_to_gib(packet.mem.total),
+                ),
+                Style::default().fg(mem_color),
+            ),
+            Span::styled(
+                format!("[{}]", mem_bar),
+                Style::default().fg(mem_color),
+            ),
+        ]));
+
+        lines.push(Line::from(vec![
+            Span::styled("   Net: ", Style::default().fg(theme.text_dim)),
+            Span::styled(
+                format!("▼{}", crate::utils::format_bytes_speed(packet.net.rx_speed)),
+                Style::default().fg(theme.accent_success),
+            ),
+            Span::styled(
+                format!(" ▲{}", crate::utils::format_bytes_speed(packet.net.tx_speed)),
+                Style::default().fg(theme.accent_warning),
+            ),
+            Span::styled(
+                format!(
+                    "  Load: {:.2} {:.2} {:.2}",
+                    packet.cpu.load_avg.0, packet.cpu.load_avg.1, packet.cpu.load_avg.2
+                ),
+                Style::default().fg(theme.text_dim),
+            ),
+            Span::styled(
+                format!("  up: {}", crate::utils::format_uptime(packet.uptime)),
+                Style::default().fg(theme.text_dim),
+            ),
+        ]));
+
+        // Temp + disks summary
+        if let Some(temp) = packet.cpu.temperature {
+            let warn = temp > 80.0;
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(
+                        "   Temp: {:.0}°C{}",
+                        temp,
+                        if warn && animation::flicker(tick, 8) { " ⚠" } else { "" }
+                    ),
+                    Style::default().fg(if warn {
+                        theme.accent_error
+                    } else {
+                        theme.accent_warning
+                    }),
+                ),
+                Span::styled(
+                    format!("  IO: R {} W {}",
+                        crate::utils::format_bytes_speed(packet.disk_io.read_speed),
+                        crate::utils::format_bytes_speed(packet.disk_io.write_speed),
+                    ),
+                    Style::default().fg(theme.text_dim),
+                ),
+            ]));
+        }
+    } else {
+        // Not connected — show status
+        let status_msg = match &host.status {
+            ConnectionStatus::Connecting => format!(" {} Connecting...", animation::dot_spinner(tick)),
+            ConnectionStatus::Error(e) => format!("   Error: {}", e),
+            ConnectionStatus::Disconnected => "   Disconnected".to_string(),
+            _ => String::new(),
+        };
+        lines.push(Line::from(Span::styled(
+            status_msg,
+            Style::default().fg(status_color),
+        )));
+    }
+
+    // Separator between hosts
+    let sep_w = area.width.saturating_sub(2) as usize;
+    lines.push(Line::from(Span::styled(
+        format!(" {}", "─".repeat(sep_w)),
+        Style::default().fg(theme.border_dim),
+    )));
+
+    let para = Paragraph::new(lines);
+    frame.render_widget(para, area);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  FOOTER
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1079,6 +1316,12 @@ pub fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled("│", sep_style),
         Span::styled("h", key_style),
         Span::styled("Hist", desc_style),
+        Span::styled("│", sep_style),
+        Span::styled("c", key_style),
+        Span::styled("CRT", desc_style),
+        Span::styled("│", sep_style),
+        Span::styled("R", key_style),
+        Span::styled("Rmt", desc_style),
     ];
 
     if app.config.security.enabled {
@@ -1089,6 +1332,33 @@ pub fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
                     theme.accent_error
                 } else {
                     theme.accent_warning
+                })
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    if app.crt_enabled {
+        hints.push(Span::styled(
+            " [CRT]",
+            Style::default()
+                .fg(theme.accent_tertiary)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    if !app.remote_hosts.is_empty() {
+        let connected = app
+            .remote_hosts
+            .values()
+            .filter(|h| h.status == crate::remote::ConnectionStatus::Connected)
+            .count();
+        hints.push(Span::styled(
+            format!(" [R:{}/{}]", connected, app.remote_hosts.len()),
+            Style::default()
+                .fg(if connected > 0 {
+                    theme.accent_success
+                } else {
+                    theme.text_dim
                 })
                 .add_modifier(Modifier::BOLD),
         ));
