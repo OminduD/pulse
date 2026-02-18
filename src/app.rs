@@ -8,6 +8,7 @@ use regex::Regex;
 
 use crate::config::Config;
 use crate::history::MetricsHistory;
+use crate::remote::{RemoteHost, RemoteManager};
 use crate::system::cpu::CpuSnapshot;
 use crate::system::disk::{DiskInfo, DiskIoSnapshot};
 use crate::system::gpu::GpuSnapshot;
@@ -15,8 +16,10 @@ use crate::system::memory::MemorySnapshot;
 use crate::system::network::{InterfaceStats, NetSnapshot, TcpConnection};
 use crate::system::process::{self, ProcessInfo};
 use crate::system::SystemCollector;
+use crate::ui::crt::CrtConfig;
 use crate::ui::layout::{ActiveView, LayoutMode};
 use crate::ui::theme::{Theme, ThemeId};
+use std::collections::HashMap;
 
 // ── Sort mode ────────────────────────────────────────────────────────────────
 
@@ -94,6 +97,16 @@ pub struct App {
     // Config
     pub config: Config,
 
+    // CRT post-processing
+    pub crt_enabled: bool,
+    pub crt_config: CrtConfig,
+
+    // Remote monitoring
+    pub remote_manager: Option<RemoteManager>,
+    pub remote_hosts: HashMap<String, RemoteHost>,
+    #[allow(dead_code)]
+    pub remote_selected: usize,
+
     // Filter
     pub filter_active: bool,
     pub filter_text: String,
@@ -136,6 +149,27 @@ impl App {
             _ => LayoutMode::Detailed,
         };
 
+        // CRT config from display settings
+        let crt_enabled = config.display.crt_effects;
+        let crt_config = CrtConfig {
+            scanline_intensity: config.display.crt_scanline_intensity,
+            vignette_intensity: config.display.crt_vignette_intensity,
+            aberration: config.display.crt_aberration,
+            glow: config.display.crt_glow,
+        };
+
+        // Remote monitoring
+        let remote_manager = if !config.remote.hosts.is_empty() {
+            let mut mgr = RemoteManager::new(
+                &config.remote.remote_binary,
+                config.remote.connect_timeout_secs,
+            );
+            mgr.start(&config.remote.hosts);
+            Some(mgr)
+        } else {
+            None
+        };
+
         Self {
             collector,
             cpu,
@@ -159,6 +193,11 @@ impl App {
             active_view: ActiveView::Overview,
             theme,
             config,
+            crt_enabled,
+            crt_config,
+            remote_manager,
+            remote_hosts: HashMap::new(),
+            remote_selected: 0,
             filter_active: false,
             filter_text: String::new(),
             input_mode: InputMode::Normal,
@@ -251,6 +290,11 @@ impl App {
 
             // Sort processes
             self.sort_processes();
+        }
+
+        // Refresh remote host data (every tick is fine, it's just reading a mutex)
+        if let Some(ref mgr) = self.remote_manager {
+            self.remote_hosts = mgr.snapshot();
         }
     }
 
@@ -362,6 +406,26 @@ impl App {
                 } else {
                     "Security Mode: OFF"
                 });
+            }
+
+            // CRT effects toggle
+            KeyCode::Char('c') | KeyCode::Char('C') => {
+                self.crt_enabled = !self.crt_enabled;
+                self.show_status(if self.crt_enabled {
+                    "CRT Effects: ON"
+                } else {
+                    "CRT Effects: OFF"
+                });
+            }
+
+            // Remote view
+            KeyCode::Char('R') => {
+                if !self.remote_hosts.is_empty() {
+                    self.active_view = ActiveView::Remote;
+                    self.show_status("Remote Hosts");
+                } else {
+                    self.show_status("No remote hosts configured");
+                }
             }
 
             // Suspend process
