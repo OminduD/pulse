@@ -6,8 +6,10 @@
 //! - `event`    — Async event loop (keyboard + periodic tick)
 //! - `history`  — Ring-buffer historical metrics engine with JSON export
 //! - `plugin`   — Dynamic plugin loading system
+//! - `remote`   — SSH-based remote host monitoring
+//! - `server`   — Headless JSON server mode for remote monitoring
 //! - `system/`  — System data collection (CPU, memory, disk, network, process, GPU)
-//! - `ui/`      — All ratatui rendering (layout, panels, animation, theme)
+//! - `ui/`      — All ratatui rendering (layout, panels, animation, theme, CRT effects)
 //! - `utils`    — Shared formatting and helper functions
 
 mod app;
@@ -15,12 +17,15 @@ mod config;
 mod event;
 mod history;
 mod plugin;
+mod remote;
+mod server;
 mod system;
 mod ui;
 mod utils;
 
 use std::io;
 
+use clap::Parser;
 use color_eyre::Result;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -33,11 +38,27 @@ use app::App;
 use config::Config;
 use event::{Event, EventLoop};
 
+// ── CLI arguments ────────────────────────────────────────────────────────────
+
+#[derive(Parser, Debug)]
+#[command(name = "pulse", version, about = "A production-grade terminal system monitor")]
+struct Cli {
+    /// Run in headless server mode (emit JSON lines to stdout for remote monitoring).
+    #[arg(long)]
+    server: bool,
+
+    /// Override the refresh interval in milliseconds (server mode).
+    #[arg(long, default_value_t = 500)]
+    interval: u64,
+}
+
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
+
+    let cli = Cli::parse();
 
     // Load configuration
     let config = Config::load().unwrap_or_else(|e| {
@@ -48,6 +69,11 @@ async fn main() -> Result<()> {
     // Save default config if it doesn't exist
     if !Config::path().exists() {
         let _ = config.save();
+    }
+
+    // Server mode: headless JSON output, no TUI
+    if cli.server {
+        return server::run_server(cli.interval).map_err(Into::into);
     }
 
     // Terminal setup
