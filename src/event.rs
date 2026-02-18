@@ -1,5 +1,5 @@
-//! Async event loop. Produces [`Event`] variants for key presses and ticks.
-//! Uses crossterm's async event stream under tokio.
+//! Async event loop. Produces [`Event`] variants for key presses, ticks,
+//! and data refresh signals. Separates render tick from data tick.
 
 use std::time::Duration;
 
@@ -10,12 +10,13 @@ use crossterm::event::{self, KeyEvent, KeyEventKind};
 pub enum Event {
     /// A keyboard key was pressed.
     Key(KeyEvent),
-    /// A periodic UI tick elapsed.
+    /// A periodic UI render tick elapsed.
     Tick,
 }
 
-/// Drives the event stream. `tick_ms` controls the UI refresh interval.
+/// Drives the event stream. Separates render rate from system data refresh.
 pub struct EventLoop {
+    /// Frame interval (e.g., 16ms for 60 FPS).
     tick_rate: Duration,
 }
 
@@ -26,14 +27,11 @@ impl EventLoop {
         }
     }
 
-    /// Wait for the next event (key or tick). Non-blocking thanks to
-    /// `crossterm::event::poll`.
+    /// Wait for the next event. If no key arrives within one tick period,
+    /// emit a Tick event so the UI redraws.
     pub async fn next(&self) -> Result<Event> {
-        // We use `poll` with the tick duration so that if no key arrives
-        // within one tick period we emit a Tick event and let the UI redraw.
         if event::poll(self.tick_rate)? {
             if let event::Event::Key(key) = event::read()? {
-                // Only react to key *press* events (ignore release/repeat)
                 if key.kind == KeyEventKind::Press {
                     return Ok(Event::Key(key));
                 }
