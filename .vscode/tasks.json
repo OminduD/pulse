@@ -48,6 +48,18 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "Build Pulse",
+			"type": "shell",
+			"command": "cd /home/omindu/Documents/Rust/pulse && cargo build 2>&1; echo EXIT:$?",
+			"group": "build"
+		},
+		{
+			"label": "Build Pulse 2",
+			"type": "shell",
+			"command": "cd /home/omindu/Documents/Rust/pulse && cargo build 2>&1; echo EXIT:$?",
+			"group": "build"
 		}
 	]
 }
