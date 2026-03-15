@@ -12,6 +12,7 @@ use ratatui::{
 
 use crate::app::{AlertSeverity, App};
 use crate::remote::ConnectionStatus;
+use crate::system::process::ProcessInfo;
 use crate::ui::animation;
 use crate::ui::theme::Theme;
 use crate::utils;
@@ -931,12 +932,14 @@ pub fn draw_processes(frame: &mut Frame, area: Rect, app: &App) {
         String::new()
     };
     let proc_count = app.filtered_processes().len();
+    let tree_label = if app.tree_view { " [TREE]" } else { "" };
     let title = format!(
-        " {} Processes [{}] sort:{}{} ",
+        " {} Processes [{}] sort:{}{}{} ",
         animation::dot_spinner(tick),
         proc_count,
         sort_label,
-        filter_info
+        filter_info,
+        tree_label,
     );
     let block = animated_block(&title, theme, phase, 0.2);
 
@@ -953,63 +956,39 @@ pub fn draw_processes(frame: &mut Frame, area: Rect, app: &App) {
         .height(1)
         .style(Style::default().bg(theme.bg_panel));
 
-    let visible_procs = app.filtered_processes();
     let visible_height = area.height.saturating_sub(4) as usize;
 
-    let rows: Vec<Row> = visible_procs
-        .iter()
-        .skip(app.process_scroll)
-        .take(visible_height)
-        .enumerate()
-        .map(|(idx, p)| {
-            let cpu_color = if p.anomaly.high_cpu {
-                // Flicker effect for anomalous processes
-                if animation::flicker(tick, 6) {
-                    theme.accent_error
+    // Build rows — tree mode or flat mode
+    let rows: Vec<Row> = if app.tree_view {
+        let tree = app.tree_processes();
+        tree.iter()
+            .skip(app.process_scroll)
+            .take(visible_height)
+            .enumerate()
+            .map(|(idx, (p, depth))| {
+                let indent = if *depth > 0 {
+                    format!("{}└─", "  ".repeat(depth.saturating_sub(1)))
                 } else {
-                    theme.accent_warning
-                }
-            } else {
-                theme.gradient_color(p.cpu as f64 / 100.0)
-            };
-
-            let name_style = if p.anomaly.suspicious {
-                Style::default()
-                    .fg(theme.accent_error)
-                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
-            } else if p.anomaly.high_memory {
-                Style::default().fg(theme.accent_warning)
-            } else {
-                Style::default().fg(theme.text_bright)
-            };
-
-            // Subtle alternating row background
-            let row_bg = if idx % 2 == 0 {
-                theme.bg_dark
-            } else {
-                theme.bg_panel
-            };
-
-            let threads_str = p
-                .threads
-                .map(|t| t.to_string())
-                .unwrap_or_else(|| "-".to_string());
-
-            Row::new(vec![
-                Cell::from(format!("{}", p.pid)).style(Style::default().fg(theme.text_dim)),
-                Cell::from(utils::truncate_str(&p.user, 8))
-                    .style(Style::default().fg(theme.text_dim)),
-                Cell::from(utils::truncate_str(&p.name, 20)).style(name_style),
-                Cell::from(format!("{:.1}", p.cpu)).style(Style::default().fg(cpu_color)),
-                Cell::from(format!("{:.1}", p.mem_mb))
-                    .style(Style::default().fg(theme.accent_secondary)),
-                Cell::from(threads_str).style(Style::default().fg(theme.text_dim)),
-                Cell::from(format!("{}", p.nice)).style(Style::default().fg(theme.text_dim)),
-                Cell::from(p.status.clone()).style(Style::default().fg(theme.text_dim)),
-            ])
-            .style(Style::default().bg(row_bg))
-        })
-        .collect();
+                    String::new()
+                };
+                let max_name_len = 20usize.saturating_sub(depth * 2);
+                let display_name = format!("{}{}", indent, utils::truncate_str(&p.name, max_name_len));
+                build_process_row(p, idx, &display_name, theme, tick)
+            })
+            .collect()
+    } else {
+        let visible_procs = app.filtered_processes();
+        visible_procs
+            .iter()
+            .skip(app.process_scroll)
+            .take(visible_height)
+            .enumerate()
+            .map(|(idx, p)| {
+                let display_name = utils::truncate_str(&p.name, 20);
+                build_process_row(p, idx, &display_name, theme, tick)
+            })
+            .collect()
+    };
 
     let table = Table::new(
         rows,
@@ -1034,6 +1013,57 @@ pub fn draw_processes(frame: &mut Frame, area: Rect, app: &App) {
     );
 
     frame.render_widget(table, area);
+}
+
+fn build_process_row<'a>(
+    p: &ProcessInfo,
+    idx: usize,
+    display_name: &str,
+    theme: &Theme,
+    tick: u64,
+) -> Row<'a> {
+    let cpu_color = if p.anomaly.high_cpu {
+        if animation::flicker(tick, 6) {
+            theme.accent_error
+        } else {
+            theme.accent_warning
+        }
+    } else {
+        theme.gradient_color(p.cpu as f64 / 100.0)
+    };
+
+    let name_style = if p.anomaly.suspicious {
+        Style::default()
+            .fg(theme.accent_error)
+            .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
+    } else if p.anomaly.high_memory {
+        Style::default().fg(theme.accent_warning)
+    } else {
+        Style::default().fg(theme.text_bright)
+    };
+
+    let row_bg = if idx % 2 == 0 {
+        theme.bg_dark
+    } else {
+        theme.bg_panel
+    };
+
+    let threads_str = p
+        .threads
+        .map(|t| t.to_string())
+        .unwrap_or_else(|| "-".to_string());
+
+    Row::new(vec![
+        Cell::from(format!("{}", p.pid)).style(Style::default().fg(theme.text_dim)),
+        Cell::from(utils::truncate_str(&p.user, 8)).style(Style::default().fg(theme.text_dim)),
+        Cell::from(display_name.to_string()).style(name_style),
+        Cell::from(format!("{:.1}", p.cpu)).style(Style::default().fg(cpu_color)),
+        Cell::from(format!("{:.1}", p.mem_mb)).style(Style::default().fg(theme.accent_secondary)),
+        Cell::from(threads_str).style(Style::default().fg(theme.text_dim)),
+        Cell::from(format!("{}", p.nice)).style(Style::default().fg(theme.text_dim)),
+        Cell::from(p.status.clone()).style(Style::default().fg(theme.text_dim)),
+    ])
+    .style(Style::default().bg(row_bg))
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1331,6 +1361,15 @@ pub fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled("│", sep_style),
         Span::styled("i", key_style),
         Span::styled("Info", desc_style),
+        Span::styled("│", sep_style),
+        Span::styled("b", key_style),
+        Span::styled("Mtrx", desc_style),
+        Span::styled("│", sep_style),
+        Span::styled("p", key_style),
+        Span::styled("Tree", desc_style),
+        Span::styled("│", sep_style),
+        Span::styled("w", key_style),
+        Span::styled("Cont", desc_style),
     ];
 
     if app.config.security.enabled {
@@ -1351,6 +1390,24 @@ pub fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
             " [CRT]",
             Style::default()
                 .fg(theme.accent_tertiary)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    if app.config.display.matrix_bg {
+        hints.push(Span::styled(
+            " [MTX]",
+            Style::default()
+                .fg(theme.accent_success)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    if app.tree_view {
+        hints.push(Span::styled(
+            " [TREE]",
+            Style::default()
+                .fg(theme.accent_secondary)
                 .add_modifier(Modifier::BOLD),
         ));
     }
@@ -1986,4 +2043,165 @@ fn count_proc_fds(pid: u32) -> Option<usize> {
     std::fs::read_dir(format!("/proc/{}/fd", pid))
         .ok()
         .map(|iter| iter.count())
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  CONTAINER MONITOR
+// ══════════════════════════════════════════════════════════════════════════════
+
+pub fn draw_containers(frame: &mut Frame, area: Rect, app: &App) {
+    use crate::system::container::{ContainerRuntime, ContainerState};
+
+    let theme = &app.theme;
+    let tick = app.tick_count;
+    let phase = app.phase;
+    let snapshot = &app.containers;
+
+    let running_count = snapshot
+        .containers
+        .iter()
+        .filter(|c| c.state == ContainerState::Running)
+        .count();
+
+    let runtime_label = match &snapshot.runtime {
+        Some(ContainerRuntime::Docker) => "Docker",
+        Some(ContainerRuntime::Podman) => "Podman",
+        None => "N/A",
+    };
+
+    let activity = if snapshot.containers.is_empty() {
+        0.0
+    } else {
+        running_count as f64 / snapshot.containers.len() as f64
+    };
+
+    let title = format!(
+        " {} Containers via {} [{}/{}] ",
+        animation::dot_spinner(tick),
+        runtime_label,
+        running_count,
+        snapshot.containers.len(),
+    );
+    let block = animated_block(&title, theme, phase, activity);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if !snapshot.available {
+        let msg = Paragraph::new(vec![
+            Line::from(Span::styled(
+                " No container runtime detected",
+                Style::default().fg(theme.text_dim),
+            )),
+            Line::from(Span::styled(
+                " Install Docker or Podman to enable container monitoring",
+                Style::default().fg(theme.text_dim),
+            )),
+        ]);
+        frame.render_widget(msg, inner);
+        return;
+    }
+
+    if snapshot.containers.is_empty() {
+        let msg = Paragraph::new(Span::styled(
+            " No containers found",
+            Style::default().fg(theme.text_dim),
+        ));
+        frame.render_widget(msg, inner);
+        return;
+    }
+
+    let header_cells = ["ID", "Name", "Image", "State", "CPU%", "MEM(MB)", "Status"]
+        .iter()
+        .map(|h| {
+            Cell::from(*h).style(
+                Style::default()
+                    .fg(theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            )
+        });
+    let header = Row::new(header_cells)
+        .height(1)
+        .style(Style::default().bg(theme.bg_panel));
+
+    let visible_height = inner.height.saturating_sub(2) as usize;
+
+    let rows: Vec<Row> = snapshot
+        .containers
+        .iter()
+        .skip(app.container_scroll)
+        .take(visible_height)
+        .enumerate()
+        .map(|(idx, c)| {
+            let state_color = match c.state {
+                ContainerState::Running => theme.accent_success,
+                ContainerState::Paused => theme.accent_warning,
+                ContainerState::Exited => theme.accent_error,
+                _ => theme.text_dim,
+            };
+
+            let state_str = match c.state {
+                ContainerState::Running => "Running",
+                ContainerState::Paused => "Paused",
+                ContainerState::Exited => "Exited",
+                ContainerState::Created => "Created",
+                ContainerState::Restarting => "Restart",
+                ContainerState::Unknown => "???",
+            };
+
+            let cpu_str = c
+                .cpu_pct
+                .map(|v| format!("{:.1}", v))
+                .unwrap_or_else(|| "-".into());
+            let mem_str = c
+                .mem_usage_mb
+                .map(|v| format!("{:.1}", v))
+                .unwrap_or_else(|| "-".into());
+
+            let row_bg = if idx % 2 == 0 {
+                theme.bg_dark
+            } else {
+                theme.bg_panel
+            };
+
+            Row::new(vec![
+                Cell::from(c.id.clone()).style(Style::default().fg(theme.text_dim)),
+                Cell::from(utils::truncate_str(&c.name, 20))
+                    .style(Style::default().fg(theme.text_bright)),
+                Cell::from(utils::truncate_str(&c.image, 24))
+                    .style(Style::default().fg(theme.accent_tertiary)),
+                Cell::from(state_str).style(
+                    Style::default()
+                        .fg(state_color)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Cell::from(cpu_str).style(Style::default().fg(theme.accent_secondary)),
+                Cell::from(mem_str).style(Style::default().fg(theme.accent_secondary)),
+                Cell::from(utils::truncate_str(&c.status, 20))
+                    .style(Style::default().fg(theme.text_dim)),
+            ])
+            .style(Style::default().bg(row_bg))
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(13),
+            Constraint::Length(20),
+            Constraint::Min(16),
+            Constraint::Length(8),
+            Constraint::Length(7),
+            Constraint::Length(9),
+            Constraint::Length(20),
+        ],
+    )
+    .header(header)
+    .row_highlight_style(
+        Style::default()
+            .fg(theme.bg_dark)
+            .bg(theme.accent_primary)
+            .add_modifier(Modifier::BOLD),
+    );
+
+    frame.render_widget(table, inner);
 }
