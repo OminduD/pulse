@@ -50,6 +50,8 @@ pub enum ActiveView {
     Heatmap,
     /// Ring-buffered log of system anomaly events.
     Alerts,
+    /// Docker/Podman container monitor.
+    Containers,
 }
 
 impl ActiveView {
@@ -63,6 +65,7 @@ impl ActiveView {
             Self::Remote => "Remote",
             Self::Heatmap => "Heatmap",
             Self::Alerts => "Alerts",
+            Self::Containers => "Containers",
         }
     }
 }
