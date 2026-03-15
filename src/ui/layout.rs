@@ -52,6 +52,8 @@ pub enum ActiveView {
     Alerts,
     /// Docker/Podman container monitor.
     Containers,
+    /// System fan speeds and control status.
+    Fans,
 }
 
 impl ActiveView {
@@ -66,6 +68,7 @@ impl ActiveView {
             Self::Heatmap => "Heatmap",
             Self::Alerts => "Alerts",
             Self::Containers => "Containers",
+            Self::Fans => "Fans",
         }
     }
 }
