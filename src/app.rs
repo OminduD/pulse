@@ -1,6 +1,7 @@
 //! Application state. Owns the system collector, history engine, config,
 //! plugin manager, and all UI state. Pure data — no rendering logic.
 
+use std::collections::VecDeque;
 use std::time::Instant;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -20,6 +21,23 @@ use crate::ui::crt::CrtConfig;
 use crate::ui::layout::{ActiveView, LayoutMode};
 use crate::ui::theme::{Theme, ThemeId};
 use std::collections::HashMap;
+
+// ── Alert log ─────────────────────────────────────────────────────────────────
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum AlertSeverity {
+    Info,
+    Warning,
+    Critical,
+}
+
+pub struct AlertEvent {
+    /// UI tick at which the alert was generated.
+    pub tick: u64,
+    pub severity: AlertSeverity,
+    pub message: String,
+}
 
 // ── Sort mode ────────────────────────────────────────────────────────────────
 
@@ -116,6 +134,17 @@ pub struct App {
     // Status message (displayed temporarily)
     pub status_message: Option<String>,
     status_expire: Option<Instant>,
+
+    // System alerts log
+    pub alerts: VecDeque<AlertEvent>,
+    /// Throttle: PID → last tick an alert was fired for that PID.
+    alert_throttle: HashMap<u32, u64>,
+
+    // Process detail overlay (toggled with `i`)
+    pub show_process_detail: bool,
+
+    // Startup splash screen (counts down to 0)
+    pub splash_remaining: u64,
 }
 
 impl App {
@@ -204,12 +233,19 @@ impl App {
             filter_regex: None,
             status_message: None,
             status_expire: None,
+            alerts: VecDeque::new(),
+            alert_throttle: HashMap::new(),
+            show_process_detail: false,
+            splash_remaining: 180, // ~3 s at 60 fps
         }
     }
 
     /// Called every UI tick (~16 ms). Refreshes system data on a separate cadence.
     pub fn on_tick(&mut self) {
         self.tick_count += 1;
+
+        // Count down splash screen
+        self.splash_remaining = self.splash_remaining.saturating_sub(1);
 
         // Advance animation phase (full cycle every ~2 seconds at 60 FPS)
         if self.config.display.animations {
@@ -263,6 +299,41 @@ impl App {
                     self.config.security.cpu_threshold,
                     self.config.security.mem_threshold_mb,
                 );
+
+                // Record anomalous processes into the alerts log
+                let tick = self.tick_count;
+                let threshold_cpu = self.config.security.cpu_threshold;
+                let threshold_mem = self.config.security.mem_threshold_mb;
+
+                // Collect pending alerts first (separate from mutable borrows below)
+                let pending: Vec<(u32, AlertSeverity, String)> = self
+                    .processes
+                    .iter()
+                    .filter(|p| p.cpu > threshold_cpu || p.mem_mb > threshold_mem)
+                    .filter_map(|p| {
+                        let last = self.alert_throttle.get(&p.pid).copied().unwrap_or(0);
+                        if tick.saturating_sub(last) < 600 {
+                            return None;
+                        }
+                        let (sev, msg) = if p.cpu > threshold_cpu {
+                            (
+                                AlertSeverity::Warning,
+                                format!("{} (PID {}) high CPU: {:.1}%", p.name, p.pid, p.cpu),
+                            )
+                        } else {
+                            (
+                                AlertSeverity::Warning,
+                                format!("{} (PID {}) high MEM: {:.0} MB", p.name, p.pid, p.mem_mb),
+                            )
+                        };
+                        Some((p.pid, sev, msg))
+                    })
+                    .collect();
+
+                for (pid, sev, msg) in pending {
+                    self.alert_throttle.insert(pid, tick);
+                    self.push_alert(sev, msg);
+                }
             }
 
             // Record history
@@ -300,6 +371,11 @@ impl App {
 
     /// Handle key input. Returns `true` if the app should quit.
     pub fn on_key(&mut self, key: KeyEvent) -> bool {
+        // Any key dismisses the splash screen
+        if self.splash_remaining > 0 {
+            self.splash_remaining = 0;
+            return false;
+        }
         match self.input_mode {
             InputMode::FilterInput => self.handle_filter_input(key),
             InputMode::Normal => self.handle_normal_input(key),
@@ -307,6 +383,12 @@ impl App {
     }
 
     fn handle_normal_input(&mut self, key: KeyEvent) -> bool {
+        // Esc always closes the process detail popup
+        if key.code == KeyCode::Esc && self.show_process_detail {
+            self.show_process_detail = false;
+            return false;
+        }
+
         match key.code {
             // Quit
             KeyCode::Char('q') | KeyCode::Char('Q') => return true,
@@ -426,6 +508,23 @@ impl App {
                 } else {
                     self.show_status("No remote hosts configured");
                 }
+            }
+
+            // CPU core heatmap
+            KeyCode::Char('x') | KeyCode::Char('X') => {
+                self.active_view = ActiveView::Heatmap;
+                self.show_status("CPU Core Heatmap");
+            }
+
+            // Alerts log
+            KeyCode::Char('a') | KeyCode::Char('A') => {
+                self.active_view = ActiveView::Alerts;
+                self.show_status("System Alerts");
+            }
+
+            // Process detail popup
+            KeyCode::Char('i') | KeyCode::Char('I') => {
+                self.show_process_detail = !self.show_process_detail;
             }
 
             // Suspend process
@@ -597,5 +696,17 @@ impl App {
     fn show_status(&mut self, msg: impl Into<String>) {
         self.status_message = Some(msg.into());
         self.status_expire = Some(Instant::now() + std::time::Duration::from_secs(3));
+    }
+
+    fn push_alert(&mut self, severity: AlertSeverity, message: String) {
+        const MAX_ALERTS: usize = 200;
+        if self.alerts.len() >= MAX_ALERTS {
+            self.alerts.pop_front();
+        }
+        self.alerts.push_back(AlertEvent {
+            tick: self.tick_count,
+            severity,
+            message,
+        });
     }
 }
