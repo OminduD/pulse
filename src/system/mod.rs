@@ -3,6 +3,7 @@
 //! Each submodule owns its snapshot types and collection logic.
 //! The top-level [`SystemCollector`] aggregates them into a single refresh cycle.
 
+pub mod container;
 pub mod cpu;
 pub mod disk;
 pub mod gpu;
