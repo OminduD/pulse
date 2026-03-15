@@ -9,19 +9,42 @@
 Pulse is a high-performance, asynchronous system monitoring tool written in Rust. It combines accurate system metrics with a retro-futuristic CRT aesthetic, providing a visually engaging way to track your system's health.
 
 ![Screenshot](screenshot.png)
-*(Note: Please add a screenshot of the application running here)*
 
 ## ✨ Features
 
 - **Resource Monitoring**: Real-time tracking of CPU, Memory, Disk I/O, Network, and GPU usage.
-- **Process Management**: powerful process list with sorting, filtering (regex supported), and signal sending capabilities (`SIGTERM`/`SIGKILL`).
+- **Process Management**: Powerful process list with sorting, filtering (regex supported), and signal sending capabilities (`SIGTERM`/`SIGKILL`).
 - **Cyberpunk Aesthetic**: Fully animated UI with customizable themes, CRT effects (scanlines, vignette, chromatic aberration), and fluid transitions.
 - **Network Inspector**: Detailed per-interface statistics and active TCP connection tracking.
+- **Security Guard**: Built-in logic to highlight suspicious processes based on CPU/Memory/Network spikes.
+- **Container View**: Integrated monitoring for running containers and virtual environments.
 - **History & Analytics**: Ring-buffer based historical data visualization with different time windows.
-- **Remote Monitoring**: Headless server mode (`--server`) to emit JSON metrics for remote visualization.
+- **Remote Monitoring**: Supports streaming metrics from remote hosts over SSH and a headless server mode (`--server`) to emit JSON metrics.
 - **High Performance**: Built on `tokio` for async I/O and `ratatui` for efficient rendering.
 
 ## 🚀 Installation
+
+### Arch Linux (AUR)
+
+You can install Pulse from the AUR using an AUR helper:
+
+```bash
+yay -S pulse-tui
+```
+
+Or for the development version:
+
+```bash
+yay -S pulse-tui-git
+```
+
+### Snap (Ubuntu/Universal)
+
+Pulse is available on the Snap Store:
+
+```bash
+sudo snap install pulse-tui
+```
 
 ### From Source
 
@@ -55,7 +78,7 @@ pulse --server --interval 1000
 | --- | --- |
 | `q` / `Ctrl+c` | Quit application |
 | `s` | Cycle sort mode (CPU, Mem, PID, Name) |
-| `f` | entering filter mode (type regex/text) |
+| `f` | Enter filter mode (type regex/text) |
 | `k` | Kill selected process (`SIGTERM`) |
 | `K` | Force kill selected process (`SIGKILL`) |
 | `m` | Cycle layout modes |
@@ -63,6 +86,7 @@ pulse --server --interval 1000
 | `g` | Switch to **GPU View** |
 | `n` | Switch to **Network Inspector** |
 | `d` | Switch to **Disk View** |
+| `c` | Switch to **Container View** |
 | `h` | Switch to **History View** (cycle history windows) |
 | `o` | Switch to **Overview** |
 | `Enter` | Toggle Focus Mode |
@@ -75,27 +99,34 @@ Pulse looks for a configuration file at `~/.config/pulse/config.toml`. It will b
 Example configuration snippet:
 
 ```toml
-[ui]
-theme = "Cyberpunk" # or "Matrix", "Dracula", etc.
-frame_rate = 60
-
-[crt]
-enabled = true
-scanline_intensity = 0.3
-vignette_intensity = 0.4
-aberration = 0.2
-glow = 0.15
-
-[system]
+[general]
 refresh_rate_ms = 500
-process_limit = 100
+frame_rate = 60
+default_sort = "cpu"
+
+[display]
+theme = "tokyonight" # tokyonight, catppuccin, gruvbox, rosepine, nord, etc.
+crt_effects = true
+crt_scanline_intensity = 0.3
+crt_aberration = 0.2
+
+[panels]
+cpu = true
+memory = true
+gpu = true
+container = true
+
+[security]
+enabled = true
+cpu_threshold = 80.0
+mem_threshold_mb = 1024.0
 ```
 
 ## 🏗️ Architecture
 
 - **Core**: Async event loop coordinated by `tokio`, decoupling data collection from UI rendering.
 - **Rendering**: Uses `ratatui` with custom widgets for charts, gauges, and the CRT post-processing effect pipeline.
-- **Data**: Uses `sysinfo` for cross-platform system data and `nix` for low-level process management.
+- **Data**: Uses `sysinfo` for cross-platform system data, `nix` for low-level process management, and custom modules for GPU/Container metrics.
 
 ## 🤝 Contributing
 
