@@ -25,6 +25,11 @@ pub fn render(frame: &mut Frame, app: &App) {
     let bg = Block::default().style(Style::default().bg(theme.bg_dark));
     frame.render_widget(bg, size);
 
+    // Matrix rain background (before widgets so panels paint over it)
+    if app.config.display.matrix_bg && app.config.display.animations {
+        render_matrix_bg(frame, size, app);
+    }
+
     // Show startup splash until it expires or is dismissed
     if app.splash_remaining > 0 {
         panels::draw_splash(frame, size, app);
@@ -140,6 +145,12 @@ fn render_detailed(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
             panels::draw_network(frame, areas.bottom_left, app);
             panels::draw_processes(frame, areas.bottom_right, app);
         }
+        ActiveView::Containers => {
+            panels::draw_containers(frame, areas.top_left, app);
+            panels::draw_memory_disk(frame, areas.top_right, app);
+            panels::draw_network(frame, areas.bottom_left, app);
+            panels::draw_processes(frame, areas.bottom_right, app);
+        }
     }
 }
 
@@ -183,5 +194,57 @@ fn render_focus(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
         ActiveView::Remote => panels::draw_remote(frame, areas.top_left, app),
         ActiveView::Heatmap => panels::draw_heatmap(frame, areas.top_left, app),
         ActiveView::Alerts => panels::draw_alerts(frame, areas.top_left, app),
+        ActiveView::Containers => panels::draw_containers(frame, areas.top_left, app),
+    }
+}
+
+// ── Matrix rain background ──────────────────────────────────────────────────
+
+/// Render matrix rain directly to the frame buffer before widgets are drawn.
+/// Only writes to cells that still contain the background fill (space character),
+/// so widgets that render on top will fully overwrite the rain.
+fn render_matrix_bg(frame: &mut Frame, area: Rect, app: &App) {
+    let tick = app.tick_count;
+    let buf = frame.buffer_mut();
+    let width = area.width as usize;
+    let height = area.height as usize;
+
+    for col in 0..width {
+        let chars = animation::matrix_column(height, tick, col);
+        // Per-column "drop speed" derived deterministically from column index
+        let speed = 1 + (col.wrapping_mul(7).wrapping_add(3)) % 4;
+        let head_row = ((tick as usize).wrapping_mul(speed)) / 3 % (height * 2);
+
+        for row in 0..height {
+            let x = area.x + col as u16;
+            let y = area.y + row as u16;
+
+            // Only draw below the falling "head"
+            let dist = if head_row >= row {
+                head_row - row
+            } else {
+                continue;
+            };
+
+            if dist > height {
+                continue;
+            }
+
+            // Brightness fades with distance from head
+            let brightness = if dist == 0 {
+                200u8
+            } else if dist < 6 {
+                (100u8).saturating_sub(dist as u8 * 14)
+            } else {
+                (50usize.saturating_sub(dist * 3)).max(4) as u8
+            };
+
+            let cell = &mut buf[(x, y)];
+            // Only write into empty (background) cells
+            if cell.symbol() == " " {
+                cell.set_char(chars[row]);
+                cell.set_fg(Color::Rgb(0, brightness, brightness / 3));
+            }
+        }
     }
 }
