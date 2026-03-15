@@ -132,11 +132,7 @@ mem_threshold_mb = 1024.0
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Please see our [Contributing Guidelines](CONTRIBUTING.md) for more details on how to get started, set up your development environment, and submit your changes.
 
 ## 📄 License
 
