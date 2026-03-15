@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
+use crate::app::{AlertSeverity, App};
 use crate::remote::ConnectionStatus;
 use crate::ui::animation;
 use crate::ui::theme::Theme;
@@ -1322,6 +1322,15 @@ pub fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled("│", sep_style),
         Span::styled("R", key_style),
         Span::styled("Rmt", desc_style),
+        Span::styled("│", sep_style),
+        Span::styled("x", key_style),
+        Span::styled("Heat", desc_style),
+        Span::styled("│", sep_style),
+        Span::styled("a", key_style),
+        Span::styled("Alerts", desc_style),
+        Span::styled("│", sep_style),
+        Span::styled("i", key_style),
+        Span::styled("Info", desc_style),
     ];
 
     if app.config.security.enabled {
@@ -1372,6 +1381,148 @@ pub fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     let footer = Paragraph::new(Line::from(hints))
         .style(Style::default().bg(theme.bg_panel));
     frame.render_widget(footer, area);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  STARTUP SPLASH SCREEN
+// ══════════════════════════════════════════════════════════════════════════════
+
+const LOGO: &[&str] = &[
+    "██████╗ ██╗   ██╗██╗     ███████╗███████╗",
+    "██╔══██╗██║   ██║██║     ██╔════╝██╔════╝",
+    "██████╔╝██║   ██║██║     ███████╗█████╗  ",
+    "██╔═══╝ ██║   ██║██║     ╚════██║██╔══╝  ",
+    "██║     ╚██████╔╝███████╗███████║███████╗",
+    "╚═╝      ╚═════╝ ╚══════╝╚══════╝╚══════╝",
+];
+
+pub fn draw_splash(frame: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    let tick = app.tick_count;
+    let phase = app.phase;
+
+    // Dark full-screen background
+    let bg = Block::default().style(Style::default().bg(theme.bg_dark));
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame.render_widget(bg, area);
+
+    // Total splash content height: logo (6) + gap (1) + subtitle (1) + gap (1)
+    //   + tagline (1) + gap (1) + progress (1) + gap (1) + prompt (1) = 14 lines
+    let content_h: u16 = 14;
+    let logo_w: u16 = LOGO[0].chars().count() as u16;
+
+    // Center the content block
+    let start_y = area.y + area.height.saturating_sub(content_h) / 2;
+    let start_x = area.x + area.width.saturating_sub(logo_w) / 2;
+
+    // ── Animated logo rows ────────────────────────────────────────────────
+    for (row_idx, &logo_line) in LOGO.iter().enumerate() {
+        let y = start_y + row_idx as u16;
+        if y >= area.y + area.height {
+            break;
+        }
+
+        // Each row gets a phase offset → wave of colour sweeps downward
+        let row_phase = (phase + row_idx as f64 * 0.12) % 1.0;
+        let (r, g, b) = animation::rainbow_rgb(row_phase, 0.0);
+
+        // Subtle secondary glow: slightly dimmer colour from the adjacent row
+        let glow_phase = (row_phase + 0.05) % 1.0;
+        let (gr, gg, gb) = animation::rainbow_rgb(glow_phase, 0.0);
+        let glow_color = Color::Rgb(gr / 3, gg / 3, gb / 3);
+
+        // Build per-character spans so the glow blends in on box-drawing chars
+        let spans: Vec<Span> = logo_line
+            .chars()
+            .map(|ch| {
+                let color = if ch == ' ' || ch == '╝' || ch == '╗' || ch == '╔' || ch == '═' || ch == '╚' {
+                    glow_color
+                } else {
+                    Color::Rgb(r, g, b)
+                };
+                Span::styled(ch.to_string(), Style::default().fg(color).add_modifier(Modifier::BOLD))
+            })
+            .collect();
+
+        let row_area = Rect::new(start_x, y, area.width.saturating_sub(start_x - area.x), 1);
+        frame.render_widget(Paragraph::new(Line::from(spans)), row_area);
+    }
+
+    let after_logo_y = start_y + LOGO.len() as u16;
+
+    // ── Version / tagline ─────────────────────────────────────────────────
+    let (vr, vg, vb) = animation::neon_cycle(phase);
+    let ver_line = format!("v{}  ·  SYSTEM MONITOR", env!("CARGO_PKG_VERSION"));
+    let ver_x = area.x + area.width.saturating_sub(ver_line.len() as u16) / 2;
+    let ver_area = Rect::new(ver_x, after_logo_y + 1, area.width, 1);
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            ver_line,
+            Style::default()
+                .fg(Color::Rgb(vr, vg, vb))
+                .add_modifier(Modifier::BOLD),
+        )),
+        ver_area,
+    );
+
+    // ── Animated scan-line decoration ─────────────────────────────────────
+    let scan_y = after_logo_y + 2;
+    let scan_str = animation::scan_line(tick, logo_w as usize);
+    let scan_x = area.x + area.width.saturating_sub(logo_w) / 2;
+    let scan_area = Rect::new(scan_x, scan_y, logo_w, 1);
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            scan_str,
+            Style::default()
+                .fg(Color::Rgb(vr / 3, vg / 3, vb / 3))
+                .add_modifier(Modifier::DIM),
+        )),
+        scan_area,
+    );
+
+    // ── Progress bar (countdown) ──────────────────────────────────────────
+    let remaining = app.splash_remaining;
+    // splash starts at 180, progress = 1.0 - remaining/180
+    let ratio = 1.0_f64 - (remaining as f64 / 180.0_f64).clamp(0.0, 1.0);
+    let bar_w = logo_w as usize;
+    let filled = (ratio * bar_w as f64) as usize;
+    let bar: String = (0..bar_w)
+        .map(|i| {
+            if i < filled {
+                '█'
+            } else if i == filled {
+                '▌'
+            } else {
+                '░'
+            }
+        })
+        .collect();
+    let bar_phase = (phase + ratio * 0.5) % 1.0;
+    let (br, bg_c, bb) = animation::rainbow_rgb(bar_phase, 0.0);
+    let bar_x = area.x + area.width.saturating_sub(logo_w) / 2;
+    let bar_area = Rect::new(bar_x, scan_y + 2, logo_w, 1);
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            bar,
+            Style::default().fg(Color::Rgb(br, bg_c, bb)),
+        )),
+        bar_area,
+    );
+
+    // ── "Press any key" prompt ────────────────────────────────────────────
+    let cursor = if animation::flicker(tick, 8) { "▌" } else { " " };
+    let prompt = format!("Press any key to start {}", cursor);
+    let prompt_x = area.x + area.width.saturating_sub(prompt.len() as u16) / 2;
+    let prompt_area = Rect::new(prompt_x, scan_y + 4, area.width, 1);
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            prompt,
+            Style::default()
+                .fg(theme.text_dim)
+                .add_modifier(Modifier::ITALIC),
+        )),
+        prompt_area,
+    );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1486,4 +1637,353 @@ fn animated_block<'a>(title: &'a str, theme: &'a Theme, phase: f64, activity: f6
         .border_style(Style::default().fg(border_color))
         .border_set(symbols::border::ROUNDED)
         .style(Style::default().bg(theme.bg_dark))
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  CPU CORE HEATMAP
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Renders a 2-D heat map: each row is a CPU core, each column a past sample.
+pub fn draw_heatmap(frame: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    let phase = app.phase;
+    let num_cores = app.history.cpu_per_core.len();
+    let activity = app.cpu.global / 100.0;
+    let block = animated_block(" ◈ CPU Core Heatmap ", theme, phase, activity);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if num_cores == 0 || inner.height < 3 || inner.width < 8 {
+        return;
+    }
+
+    // Reserve 2 rows at the bottom for the legend
+    let legend_height: u16 = 2;
+    let grid_height = inner.height.saturating_sub(legend_height);
+
+    // First 4 columns are the core label ("NN▕")
+    let label_w: u16 = 4;
+    let grid_w = inner.width.saturating_sub(label_w) as usize;
+
+    let cores_to_show = num_cores.min(grid_height as usize);
+
+    for (core_idx, core_history) in app.history.cpu_per_core.iter().enumerate().take(cores_to_show) {
+        let data = core_history.last_n(grid_w);
+        let y = inner.y + core_idx as u16;
+
+        let label = format!("{:>2}▕", core_idx);
+        let mut spans: Vec<Span> = vec![
+            Span::styled(label, Style::default().fg(theme.text_dim)),
+        ];
+
+        // Pad left with cold colour when history is shorter than the grid
+        let pad = grid_w.saturating_sub(data.len());
+        for _ in 0..pad {
+            spans.push(Span::styled("░", Style::default().fg(Color::Rgb(15, 15, 35))));
+        }
+
+        for value in &data {
+            let ratio = (*value / 100.0).clamp(0.0, 1.0);
+            let color = heat_color(ratio);
+            let ch = if ratio < 0.05 {
+                "░"
+            } else if ratio < 0.35 {
+                "▒"
+            } else if ratio < 0.65 {
+                "▓"
+            } else {
+                "█"
+            };
+            spans.push(Span::styled(ch, Style::default().fg(color)));
+        }
+
+        let row_area = Rect::new(inner.x, y, inner.width, 1);
+        frame.render_widget(Paragraph::new(Line::from(spans)), row_area);
+    }
+
+    // Legend gradient strip
+    let legend_y = inner.y + cores_to_show as u16 + 1;
+    if legend_y < inner.y + inner.height {
+        let strip_w = grid_w.min(40);
+        let mut lspans: Vec<Span> = vec![
+            Span::styled("    0% ", Style::default().fg(theme.text_dim)),
+        ];
+        for i in 0..strip_w {
+            let ratio = i as f64 / strip_w as f64;
+            lspans.push(Span::styled("▄", Style::default().fg(heat_color(ratio))));
+        }
+        lspans.push(Span::styled(" 100%", Style::default().fg(theme.text_dim)));
+        let legend_area = Rect::new(inner.x, legend_y, inner.width, 1);
+        frame.render_widget(Paragraph::new(Line::from(lspans)), legend_area);
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SYSTEM ALERTS LOG
+// ══════════════════════════════════════════════════════════════════════════════
+
+pub fn draw_alerts(frame: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    let phase = app.phase;
+    let tick = app.tick_count;
+
+    let block = animated_block(" ⚠ System Alerts ", theme, phase, 0.0);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if app.alerts.is_empty() {
+        let wave = animation::wave_pattern(tick, inner.width as usize);
+        let msg = Paragraph::new(vec![
+            Line::from(Span::styled(
+                " No alerts yet. Enable security mode with [!] to start tracking.",
+                Style::default().fg(theme.text_dim),
+            )),
+            Line::from(Span::styled(wave, Style::default().fg(theme.border_dim))),
+        ]);
+        frame.render_widget(msg, inner);
+        return;
+    }
+
+    let header = Row::new(vec![
+        Cell::from("Age  ").style(
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("").style(Style::default()),
+        Cell::from("Event").style(
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+
+    let visible = inner.height.saturating_sub(1) as usize;
+    let rows: Vec<Row> = app
+        .alerts
+        .iter()
+        .rev()
+        .take(visible)
+        .map(|ev| {
+            let age_ticks = tick.saturating_sub(ev.tick);
+            // Approx: 60 FPS, data refresh ~every 30 ticks
+            let secs = age_ticks / 60;
+            let age_str = if secs < 60 {
+                format!("{:>3}s ", secs)
+            } else {
+                format!("{:>2}m{:02}s", secs / 60, secs % 60)
+            };
+            let (icon, color) = match ev.severity {
+                AlertSeverity::Info => ("ℹ", theme.accent_secondary),
+                AlertSeverity::Warning => ("⚠", theme.accent_warning),
+                AlertSeverity::Critical => ("✖", theme.accent_error),
+            };
+            Row::new(vec![
+                Cell::from(age_str).style(Style::default().fg(theme.text_dim)),
+                Cell::from(icon).style(Style::default().fg(color)),
+                Cell::from(ev.message.clone()).style(Style::default().fg(color)),
+            ])
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [Constraint::Length(6), Constraint::Length(2), Constraint::Min(20)],
+    )
+    .header(header);
+    frame.render_widget(table, inner);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  PROCESS DETAIL POPUP
+// ══════════════════════════════════════════════════════════════════════════════
+
+pub fn draw_process_detail(frame: &mut Frame, area: Rect, app: &App) {
+    let procs = app.filtered_processes();
+    let proc = match procs.get(app.process_scroll) {
+        Some(p) => *p,
+        None => return,
+    };
+
+    let popup_w = (area.width * 70 / 100).max(60).min(area.width.saturating_sub(4));
+    let popup_h = (area.height * 65 / 100).max(14).min(area.height.saturating_sub(2));
+    let popup_x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+    let popup_y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+    let popup_area = Rect::new(popup_x, popup_y, popup_w, popup_h);
+
+    let theme = &app.theme;
+    let tick = app.tick_count;
+
+    frame.render_widget(ratatui::widgets::Clear, popup_area);
+
+    let cmdline = read_proc_cmdline(proc.pid);
+    let fd_count = count_proc_fds(proc.pid);
+
+    let (nr, ng, nb) = animation::neon_cycle(app.phase);
+    let border_color = Color::Rgb(nr, ng, nb);
+
+    let block = Block::default()
+        .title(Span::styled(
+            format!(
+                " {} Process: {} (PID {})  [i/Esc] ",
+                animation::dot_spinner(tick),
+                proc.name,
+                proc.pid
+            ),
+            Style::default()
+                .fg(border_color)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color))
+        .border_set(symbols::border::ROUNDED)
+        .style(Style::default().bg(theme.bg_panel));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let label_sty = Style::default().fg(theme.text_dim);
+    let val_sty = Style::default()
+        .fg(theme.text_bright)
+        .add_modifier(Modifier::BOLD);
+    let cpu_color = theme.gradient_color(proc.cpu as f64 / 100.0);
+    let mem_color = theme.gradient_color(proc.mem_mb as f64 / 8192.0);
+    let sep = Span::styled(
+        "─".repeat(inner.width as usize),
+        Style::default().fg(theme.border_dim),
+    );
+
+    let max_cmd_w = (inner.width as usize).saturating_sub(12);
+    let cmd_display = if cmdline.len() > max_cmd_w {
+        format!("{}…", &cmdline[..max_cmd_w.saturating_sub(1)])
+    } else {
+        cmdline
+    };
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(" Name:      ", label_sty),
+            Span::styled(
+                proc.name.clone(),
+                Style::default()
+                    .fg(theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(" PID:       ", label_sty),
+            Span::styled(proc.pid.to_string(), val_sty),
+            Span::styled("   User: ", label_sty),
+            Span::styled(proc.user.clone(), val_sty),
+        ]),
+        Line::from(sep.clone()),
+        Line::from(vec![
+            Span::styled(" CPU:       ", label_sty),
+            Span::styled(
+                format!("{:.1}%", proc.cpu),
+                Style::default().fg(cpu_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("   Memory: ", label_sty),
+            Span::styled(
+                format!("{:.1} MB", proc.mem_mb),
+                Style::default().fg(mem_color).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(" Threads:   ", label_sty),
+            Span::styled(
+                proc.threads
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "?".into()),
+                val_sty,
+            ),
+            Span::styled("   Nice:    ", label_sty),
+            Span::styled(proc.nice.to_string(), val_sty),
+        ]),
+        Line::from(vec![
+            Span::styled(" Status:    ", label_sty),
+            Span::styled(proc.status.clone(), val_sty),
+            Span::styled("   Open FDs: ", label_sty),
+            Span::styled(
+                fd_count
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| "n/a".into()),
+                val_sty,
+            ),
+        ]),
+        Line::from(sep.clone()),
+        Line::from(vec![
+            Span::styled(" Cmdline:   ", label_sty),
+            Span::styled(cmd_display, Style::default().fg(theme.accent_tertiary)),
+        ]),
+    ];
+
+    // Inline braille sparkline for this process's CPU history
+    if let Some(ring) = app.history.process_cpu.get(&proc.pid) {
+        let hist_w = (inner.width as usize).saturating_sub(14);
+        let hist_data = ring.last_n(hist_w);
+        let spark = animation::braille_sparkline(&hist_data, 100.0, hist_data.len());
+        lines.push(Line::from(sep));
+        lines.push(Line::from(vec![
+            Span::styled(" CPU hist:  ", label_sty),
+            Span::styled(spark, Style::default().fg(cpu_color)),
+        ]));
+    }
+
+    let para = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .style(Style::default().bg(theme.bg_panel));
+    frame.render_widget(para, inner);
+}
+
+// ── Private helpers ───────────────────────────────────────────────────────────
+
+/// Heat-map colour ramp: deep navy → teal → yellow → orange → bright red.
+fn heat_color(ratio: f64) -> Color {
+    if ratio < 0.25 {
+        crate::ui::theme::lerp_color(
+            Color::Rgb(0, 20, 80),
+            Color::Rgb(0, 160, 120),
+            ratio / 0.25,
+        )
+    } else if ratio < 0.50 {
+        crate::ui::theme::lerp_color(
+            Color::Rgb(0, 160, 120),
+            Color::Rgb(200, 200, 0),
+            (ratio - 0.25) / 0.25,
+        )
+    } else if ratio < 0.75 {
+        crate::ui::theme::lerp_color(
+            Color::Rgb(200, 200, 0),
+            Color::Rgb(240, 80, 0),
+            (ratio - 0.50) / 0.25,
+        )
+    } else {
+        crate::ui::theme::lerp_color(
+            Color::Rgb(240, 80, 0),
+            Color::Rgb(255, 20, 20),
+            (ratio - 0.75) / 0.25,
+        )
+    }
+}
+
+/// Read `/proc/<pid>/cmdline` and convert null bytes to spaces.
+fn read_proc_cmdline(pid: u32) -> String {
+    std::fs::read(format!("/proc/{}/cmdline", pid))
+        .map(|bytes| {
+            bytes
+                .iter()
+                .map(|&b| if b == 0 { ' ' } else { b as char })
+                .collect::<String>()
+                .trim()
+                .to_string()
+        })
+        .unwrap_or_default()
+}
+
+/// Count entries in `/proc/<pid>/fd` to approximate open file descriptors.
+fn count_proc_fds(pid: u32) -> Option<usize> {
+    std::fs::read_dir(format!("/proc/{}/fd", pid))
+        .ok()
+        .map(|iter| iter.count())
 }
