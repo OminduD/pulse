@@ -25,6 +25,12 @@ pub fn render(frame: &mut Frame, app: &App) {
     let bg = Block::default().style(Style::default().bg(theme.bg_dark));
     frame.render_widget(bg, size);
 
+    // Show startup splash until it expires or is dismissed
+    if app.splash_remaining > 0 {
+        panels::draw_splash(frame, size, app);
+        return;
+    }
+
     // Render subtle animated wave pattern at the bottom for atmosphere
     if app.config.display.animations {
         render_ambient_effect(frame, size, app);
@@ -40,6 +46,9 @@ pub fn render(frame: &mut Frame, app: &App) {
     // Overlays (always on top)
     if app.filter_active {
         panels::draw_filter_input(frame, size, app);
+    }
+    if app.show_process_detail {
+        panels::draw_process_detail(frame, size, app);
     }
     panels::draw_status_message(frame, size, app);
 
@@ -119,6 +128,18 @@ fn render_detailed(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
             panels::draw_network(frame, areas.bottom_left, app);
             panels::draw_processes(frame, areas.bottom_right, app);
         }
+        ActiveView::Heatmap => {
+            panels::draw_heatmap(frame, areas.top_left, app);
+            panels::draw_memory_disk(frame, areas.top_right, app);
+            panels::draw_network(frame, areas.bottom_left, app);
+            panels::draw_processes(frame, areas.bottom_right, app);
+        }
+        ActiveView::Alerts => {
+            panels::draw_alerts(frame, areas.top_left, app);
+            panels::draw_memory_disk(frame, areas.top_right, app);
+            panels::draw_network(frame, areas.bottom_left, app);
+            panels::draw_processes(frame, areas.bottom_right, app);
+        }
     }
 }
 
@@ -160,5 +181,7 @@ fn render_focus(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
         ActiveView::Gpu => panels::draw_gpu(frame, areas.top_left, app),
         ActiveView::History => panels::draw_history(frame, areas.top_left, app),
         ActiveView::Remote => panels::draw_remote(frame, areas.top_left, app),
+        ActiveView::Heatmap => panels::draw_heatmap(frame, areas.top_left, app),
+        ActiveView::Alerts => panels::draw_alerts(frame, areas.top_left, app),
     }
 }
