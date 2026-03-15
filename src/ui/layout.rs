@@ -46,6 +46,10 @@ pub enum ActiveView {
     Gpu,
     History,
     Remote,
+    /// 2-D heat map of per-core CPU utilisation over time.
+    Heatmap,
+    /// Ring-buffered log of system anomaly events.
+    Alerts,
 }
 
 impl ActiveView {
@@ -57,6 +61,8 @@ impl ActiveView {
             Self::Gpu => "GPU",
             Self::History => "History",
             Self::Remote => "Remote",
+            Self::Heatmap => "Heatmap",
+            Self::Alerts => "Alerts",
         }
     }
 }
