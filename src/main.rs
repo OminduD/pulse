@@ -119,6 +119,9 @@ async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, config: Conf
                     break; // quit requested
                 }
             }
+            Event::Mouse(mouse) => {
+                app.on_mouse(mouse);
+            }
         }
     }
 
