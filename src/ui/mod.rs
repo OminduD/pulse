@@ -151,6 +151,12 @@ fn render_detailed(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
             panels::draw_network(frame, areas.bottom_left, app);
             panels::draw_processes(frame, areas.bottom_right, app);
         }
+        ActiveView::Fans => {
+            panels::draw_fans(frame, areas.top_left, app);
+            panels::draw_memory_disk(frame, areas.top_right, app);
+            panels::draw_network(frame, areas.bottom_left, app);
+            panels::draw_processes(frame, areas.bottom_right, app);
+        }
     }
 }
 
@@ -195,6 +201,7 @@ fn render_focus(frame: &mut Frame, app: &App, size: ratatui::layout::Rect) {
         ActiveView::Heatmap => panels::draw_heatmap(frame, areas.top_left, app),
         ActiveView::Alerts => panels::draw_alerts(frame, areas.top_left, app),
         ActiveView::Containers => panels::draw_containers(frame, areas.top_left, app),
+        ActiveView::Fans => panels::draw_fans(frame, areas.top_left, app),
     }
 }
 
