@@ -4,12 +4,13 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use regex::Regex;
 
 use crate::config::Config;
 use crate::history::MetricsHistory;
 use crate::remote::{RemoteHost, RemoteManager};
+use crate::system::container::{ContainerAction, ContainerSnapshot};
 use crate::system::cpu::CpuSnapshot;
 use crate::system::disk::{DiskInfo, DiskIoSnapshot};
 use crate::system::gpu::GpuSnapshot;
@@ -18,7 +19,7 @@ use crate::system::network::{InterfaceStats, NetSnapshot, TcpConnection};
 use crate::system::process::{self, ProcessInfo};
 use crate::system::SystemCollector;
 use crate::ui::crt::CrtConfig;
-use crate::ui::layout::{ActiveView, LayoutMode};
+use crate::ui::layout::{self, ActiveView, LayoutMode};
 use crate::ui::theme::{Theme, ThemeId};
 use std::collections::HashMap;
 
@@ -143,6 +144,13 @@ pub struct App {
     // Process detail overlay (toggled with `i`)
     pub show_process_detail: bool,
 
+    // Process tree view (toggled with `p`)
+    pub tree_view: bool,
+
+    // Container monitoring
+    pub containers: ContainerSnapshot,
+    pub container_scroll: usize,
+
     // Startup splash screen (counts down to 0)
     pub splash_remaining: u64,
 }
@@ -236,6 +244,9 @@ impl App {
             alerts: VecDeque::new(),
             alert_throttle: HashMap::new(),
             show_process_detail: false,
+            tree_view: false,
+            containers: ContainerSnapshot::default(),
+            container_scroll: 0,
             splash_remaining: 180, // ~3 s at 60 fps
         }
     }
@@ -284,6 +295,11 @@ impl App {
             // GPU refresh (less frequent due to nvidia-smi cost)
             if self.tick_count % 4 == 0 && self.config.panels.gpu {
                 self.gpu = GpuSnapshot::collect();
+            }
+
+            // Container refresh (only when viewing containers, due to CLI cost)
+            if self.tick_count % 8 == 0 && self.active_view == ActiveView::Containers {
+                self.containers = ContainerSnapshot::collect();
             }
 
             // TCP connections (only in network view)
@@ -409,9 +425,13 @@ impl App {
                 self.filter_regex = None;
             }
 
-            // Kill process
+            // Kill process / stop container
             KeyCode::Char('k') => {
-                self.kill_selected_process(false);
+                if self.active_view == ActiveView::Containers {
+                    self.do_container_action(ContainerAction::Stop);
+                } else {
+                    self.kill_selected_process(false);
+                }
             }
             KeyCode::Char('K') => {
                 self.kill_selected_process(true);
@@ -531,32 +551,98 @@ impl App {
             KeyCode::Char('z') => {
                 self.signal_selected_process(process::Signal::Stop);
             }
-            // Resume process
+            // Resume process / restart container
             KeyCode::Char('r') => {
-                self.signal_selected_process(process::Signal::Cont);
+                if self.active_view == ActiveView::Containers {
+                    self.do_container_action(ContainerAction::Restart);
+                } else {
+                    self.signal_selected_process(process::Signal::Cont);
+                }
             }
 
             // Navigation
             KeyCode::Down | KeyCode::Char('j') => {
-                if self.process_scroll < self.filtered_processes().len().saturating_sub(1) {
-                    self.process_scroll += 1;
+                if self.active_view == ActiveView::Containers {
+                    let max = self.containers.containers.len().saturating_sub(1);
+                    if self.container_scroll < max {
+                        self.container_scroll += 1;
+                    }
+                } else {
+                    let max = self.filtered_processes().len().saturating_sub(1);
+                    if self.process_scroll < max {
+                        self.process_scroll += 1;
+                    }
                 }
             }
             KeyCode::Up | KeyCode::Char('J') => {
-                self.process_scroll = self.process_scroll.saturating_sub(1);
+                if self.active_view == ActiveView::Containers {
+                    self.container_scroll = self.container_scroll.saturating_sub(1);
+                } else {
+                    self.process_scroll = self.process_scroll.saturating_sub(1);
+                }
             }
             KeyCode::PageDown => {
-                let max = self.filtered_processes().len().saturating_sub(1);
-                self.process_scroll = (self.process_scroll + 20).min(max);
+                if self.active_view == ActiveView::Containers {
+                    let max = self.containers.containers.len().saturating_sub(1);
+                    self.container_scroll = (self.container_scroll + 20).min(max);
+                } else {
+                    let max = self.filtered_processes().len().saturating_sub(1);
+                    self.process_scroll = (self.process_scroll + 20).min(max);
+                }
             }
             KeyCode::PageUp => {
-                self.process_scroll = self.process_scroll.saturating_sub(20);
+                if self.active_view == ActiveView::Containers {
+                    self.container_scroll = self.container_scroll.saturating_sub(20);
+                } else {
+                    self.process_scroll = self.process_scroll.saturating_sub(20);
+                }
             }
             KeyCode::Home => {
-                self.process_scroll = 0;
+                if self.active_view == ActiveView::Containers {
+                    self.container_scroll = 0;
+                } else {
+                    self.process_scroll = 0;
+                }
             }
             KeyCode::End => {
-                self.process_scroll = self.filtered_processes().len().saturating_sub(1);
+                if self.active_view == ActiveView::Containers {
+                    self.container_scroll = self.containers.containers.len().saturating_sub(1);
+                } else {
+                    self.process_scroll = self.filtered_processes().len().saturating_sub(1);
+                }
+            }
+
+            // Matrix rain background toggle
+            KeyCode::Char('b') | KeyCode::Char('B') => {
+                self.config.display.matrix_bg = !self.config.display.matrix_bg;
+                self.show_status(if self.config.display.matrix_bg {
+                    "Matrix Background: ON"
+                } else {
+                    "Matrix Background: OFF"
+                });
+            }
+
+            // Process tree view toggle
+            KeyCode::Char('p') | KeyCode::Char('P') => {
+                self.tree_view = !self.tree_view;
+                self.process_scroll = 0;
+                self.show_status(if self.tree_view {
+                    "Process Tree View"
+                } else {
+                    "Process List View"
+                });
+            }
+
+            // Container view
+            KeyCode::Char('w') | KeyCode::Char('W') => {
+                if self.active_view == ActiveView::Containers {
+                    self.containers = ContainerSnapshot::collect();
+                    self.show_status("Containers refreshed");
+                } else {
+                    self.active_view = ActiveView::Containers;
+                    self.containers = ContainerSnapshot::collect();
+                    self.show_status("Container Monitor");
+                }
             }
 
             _ => {}
@@ -708,5 +794,125 @@ impl App {
             severity,
             message,
         });
+    }
+
+    // ── Mouse support ───────────────────────────────────────────────────────
+
+    pub fn on_mouse(&mut self, mouse: MouseEvent) {
+        if self.splash_remaining > 0 {
+            self.splash_remaining = 0;
+            return;
+        }
+
+        // Compute where the process table is on screen
+        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        let area = ratatui::layout::Rect::new(0, 0, cols, rows);
+        let rect = match self.layout_mode {
+            LayoutMode::Detailed => layout::compute_detailed(area).bottom_right,
+            LayoutMode::Compact => layout::compute_compact(area).bottom_right,
+            LayoutMode::ProcessOnly => layout::compute_process_only(area).bottom_right,
+            LayoutMode::Focus => return, // no process table in focus mode
+        };
+
+        let col = mouse.column;
+        let row = mouse.row;
+        let in_rect = col >= rect.x
+            && col < rect.x + rect.width
+            && row >= rect.y
+            && row < rect.y + rect.height;
+
+        if !in_rect {
+            return;
+        }
+
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                // header_offset: block border (1) + header row (1) + separator (1)
+                let header_offset = 3u16;
+                if row >= rect.y + header_offset {
+                    let clicked_row = (row - rect.y - header_offset) as usize;
+                    let target = self.process_scroll + clicked_row;
+                    let max = self.filtered_processes().len().saturating_sub(1);
+                    self.process_scroll = target.min(max);
+                }
+            }
+            MouseEventKind::ScrollDown => {
+                let max = self.filtered_processes().len().saturating_sub(1);
+                self.process_scroll = (self.process_scroll + 3).min(max);
+            }
+            MouseEventKind::ScrollUp => {
+                self.process_scroll = self.process_scroll.saturating_sub(3);
+            }
+            _ => {}
+        }
+    }
+
+    // ── Process tree ────────────────────────────────────────────────────────
+
+    /// Produce a flattened tree of processes with indentation depth.
+    pub fn tree_processes(&self) -> Vec<(&ProcessInfo, usize)> {
+        let procs = self.filtered_processes();
+
+        // Build pid → child indices map
+        let pid_set: std::collections::HashSet<u32> = procs.iter().map(|p| p.pid).collect();
+        let mut children: HashMap<u32, Vec<usize>> = HashMap::new();
+
+        for (idx, p) in procs.iter().enumerate() {
+            let parent = p.ppid.unwrap_or(0);
+            children.entry(parent).or_default().push(idx);
+        }
+
+        // Roots: ppid not in our set, or ppid == 0 / 1
+        let roots: Vec<usize> = procs
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                let ppid = p.ppid.unwrap_or(0);
+                ppid == 0 || ppid == 1 || !pid_set.contains(&ppid)
+            })
+            .map(|(idx, _)| idx)
+            .collect();
+
+        let mut result = Vec::with_capacity(procs.len());
+        let mut stack: Vec<(usize, usize)> = Vec::new();
+
+        for &idx in roots.iter().rev() {
+            stack.push((idx, 0));
+        }
+
+        while let Some((idx, depth)) = stack.pop() {
+            result.push((procs[idx], depth));
+            if let Some(child_indices) = children.get(&procs[idx].pid) {
+                for &cidx in child_indices.iter().rev() {
+                    stack.push((cidx, depth + 1));
+                }
+            }
+        }
+
+        result
+    }
+
+    // ── Container actions ───────────────────────────────────────────────────
+
+    fn do_container_action(&mut self, action: ContainerAction) {
+        if let Some(c) = self.containers.containers.get(self.container_scroll) {
+            let id = c.id.clone();
+            let name = c.name.clone();
+            let runtime = c.runtime.clone();
+            match crate::system::container::container_action(&id, action, &runtime) {
+                Ok(()) => {
+                    let label = match action {
+                        ContainerAction::Stop => "Stopped",
+                        ContainerAction::Restart => "Restarted",
+                        ContainerAction::Pause => "Paused",
+                        ContainerAction::Unpause => "Unpaused",
+                    };
+                    self.show_status(format!("{} container {} ({})", label, name, id));
+                }
+                Err(e) => {
+                    self.show_status(format!("Container action failed: {}", e));
+                }
+            }
+        }
     }
 }
