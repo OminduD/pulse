@@ -41,7 +41,7 @@ pub struct GeneralConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DisplayConfig {
-    /// Active theme: "neon", "monochrome", "retro", "synthwave", "ocean".
+    /// Active theme: "tokyonight", "catppuccin", "gruvbox", "rosepine", "nord", "kanagawa", "dracula", "everforest", "onedark", "moonfly".
     pub theme: String,
     /// Enable animations globally.
     pub animations: bool,
@@ -124,7 +124,7 @@ impl Default for GeneralConfig {
 impl Default for DisplayConfig {
     fn default() -> Self {
         Self {
-            theme: "neon".into(),
+            theme: "tokyonight".into(),
             animations: true,
             matrix_bg: false,
             layout_mode: "detailed".into(),
