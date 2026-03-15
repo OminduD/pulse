@@ -8,6 +8,7 @@ use sysinfo::System;
 #[allow(dead_code)]
 pub struct ProcessInfo {
     pub pid: u32,
+    pub ppid: Option<u32>,
     pub name: String,
     pub cpu: f32,
     pub mem_mb: f64,
@@ -40,6 +41,7 @@ pub fn collect(sys: &System) -> Vec<ProcessInfo> {
 
             ProcessInfo {
                 pid,
+                ppid: p.parent().map(|pp| pp.as_u32()),
                 name: p.name().to_string_lossy().to_string(),
                 cpu: p.cpu_usage(),
                 mem_mb: p.memory() as f64 / 1_048_576.0,
