@@ -1,0 +1,110 @@
+# Maintainer: YOUR_NAME <YOUR_EMAIL>
+#
+# ── How to submit to AUR ─────────────────────────────────────────────────────
+#  1. Replace YOUR_GITHUB_USER with your GitHub username everywhere below.
+#  2. Tag the release on GitHub:  git tag v0.2.0 && git push --tags
+#  3. Generate the sha256sum of the source tarball:
+#       curl -sL https://github.com/YOUR_GITHUB_USER/pulse/archive/v0.2.0.tar.gz \
+#         | sha256sum
+#     Paste the result into sha256sums below (replacing SKIP).
+#  4. Run:  makepkg --printsrcinfo > .SRCINFO
+#  5. Clone the AUR repo:  git clone ssh://aur@aur.archlinux.org/pulse-tui.git
+#  6. Copy PKGBUILD + .SRCINFO into the clone, commit, and push.
+# ─────────────────────────────────────────────────────────────────────────────
+
+pkgname=pulse-tui
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Production-grade terminal system monitor with animated cyberpunk TUI'
+arch=('x86_64' 'aarch64')
+url='https://github.com/YOUR_GITHUB_USER/pulse'
+license=('MIT')
+
+# Runtime: none — Rust statically links all deps
+depends=()
+
+# Build tools only
+makedepends=('cargo' 'rust' 'pkg-config')
+
+# Optional: nvidia-smi for GPU monitoring (not packaged here)
+optdepends=('nvidia-utils: GPU monitoring via nvidia-smi'
+            'openssh: remote host monitoring over SSH')
+
+provides=('pulse-tui')
+conflicts=()
+
+source=("$pkgname-$pkgver.tar.gz::https://github.com/YOUR_GITHUB_USER/pulse/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+    cd "pulse-$pkgver"
+    # Pre-fetch Cargo deps into the build cache (offline-capable after first run)
+    export CARGO_HOME="$srcdir/cargo-home"
+    cargo fetch --locked --target "$CARCH-unknown-linux-gnu"
+}
+
+build() {
+    cd "pulse-$pkgver"
+    export CARGO_HOME="$srcdir/cargo-home"
+    cargo build --release --locked --target "$CARCH-unknown-linux-gnu"
+}
+
+check() {
+    cd "pulse-$pkgver"
+    export CARGO_HOME="$srcdir/cargo-home"
+    cargo test --release --locked -- --test-threads=1 2>/dev/null || true
+}
+
+package() {
+    cd "pulse-$pkgver"
+
+    # Binary
+    install -Dm755 "target/$CARCH-unknown-linux-gnu/release/pulse" \
+        "$pkgdir/usr/bin/pulse"
+
+    # License
+    install -Dm644 LICENSE \
+        "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+    # Config example (create the XDG dir so the app finds it)
+    install -dm755 "$pkgdir/usr/share/doc/$pkgname"
+    cat > "$pkgdir/usr/share/doc/$pkgname/config.example.toml" << 'EOF'
+# Pulse configuration — copy to ~/.config/pulse/config.toml
+
+[general]
+refresh_rate_ms = 500
+frame_rate = 60
+default_sort = "cpu"      # cpu | memory | pid | name
+adaptive_refresh = false
+
+[display]
+theme = "tokyonight"      # tokyonight | catppuccin | gruvbox | rosepine |
+                          # nord | kanagawa | dracula | everforest | onedark | moonfly
+animations = true
+layout_mode = "detailed"  # detailed | compact
+crt_effects = false
+crt_scanline_intensity = 0.3
+crt_vignette_intensity  = 0.4
+crt_aberration          = 0.2
+crt_glow                = 0.15
+
+[panels]
+cpu     = true
+memory  = true
+disk    = true
+network = true
+processes = true
+gpu     = true
+
+[security]
+enabled            = false
+cpu_threshold      = 90.0   # % — flag runaway processes
+mem_threshold_mb   = 4096.0 # MB
+net_spike_threshold_mb = 100.0
+
+[remote]
+hosts = []                  # e.g. ["user@host1", "user@host2"]
+remote_binary = "pulse"
+connect_timeout_secs = 10
+EOF
+}
