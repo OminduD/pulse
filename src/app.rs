@@ -13,6 +13,7 @@ use crate::remote::{RemoteHost, RemoteManager};
 use crate::system::container::{ContainerAction, ContainerSnapshot};
 use crate::system::cpu::CpuSnapshot;
 use crate::system::disk::{DiskInfo, DiskIoSnapshot};
+use crate::system::fan::FanSnapshot;
 use crate::system::gpu::GpuSnapshot;
 use crate::system::memory::MemorySnapshot;
 use crate::system::network::{InterfaceStats, NetSnapshot, TcpConnection};
@@ -93,6 +94,7 @@ pub struct App {
     pub tcp_connections: Vec<TcpConnection>,
     pub processes: Vec<ProcessInfo>,
     pub gpu: GpuSnapshot,
+    pub fans: FanSnapshot,
     pub uptime: u64,
 
     // History engine
@@ -166,6 +168,7 @@ impl App {
         let interfaces = collector.per_interface(1.0);
         let processes = collector.processes();
         let gpu = GpuSnapshot::collect();
+        let fans = FanSnapshot::collect();
         let uptime = collector.uptime();
 
         let num_cores = collector.num_cpus();
@@ -218,6 +221,7 @@ impl App {
             tcp_connections: Vec::new(),
             processes,
             gpu,
+            fans,
             uptime,
             history,
             sort_mode,
@@ -295,6 +299,11 @@ impl App {
             // GPU refresh (less frequent due to nvidia-smi cost)
             if self.tick_count % 4 == 0 && self.config.panels.gpu {
                 self.gpu = GpuSnapshot::collect();
+            }
+
+            // Fan refresh (only when viewing fans, moderate frequency)
+            if self.tick_count % 4 == 0 && self.active_view == ActiveView::Fans {
+                self.fans = FanSnapshot::collect();
             }
 
             // Container refresh (only when viewing containers, due to CLI cost)
@@ -540,6 +549,13 @@ impl App {
             KeyCode::Char('a') | KeyCode::Char('A') => {
                 self.active_view = ActiveView::Alerts;
                 self.show_status("System Alerts");
+            }
+
+            // Fan speeds
+            KeyCode::Char('v') | KeyCode::Char('V') => {
+                self.active_view = ActiveView::Fans;
+                self.fans = FanSnapshot::collect(); // Refresh immediately
+                self.show_status("Fan Monitor");
             }
 
             // Process detail popup
