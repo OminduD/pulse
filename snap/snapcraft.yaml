@@ -1,0 +1,55 @@
+name: pulse-tui
+base: core22
+version: '0.2.0'
+summary: Production-grade terminal system monitor with animated cyberpunk TUI
+description: |
+  Pulse is a feature-rich TUI system monitor for Linux with a cyberpunk aesthetic.
+  Displays CPU, memory, disk, network, and GPU usage with real-time animated charts,
+  a per-core CPU heatmap, per-process detail popups, and a live system alerts log.
+
+  Key features:
+    - Animated PULSE logo startup splash
+    - 10 colour themes (Tokyo Night, Catppuccin, Gruvbox, Rose Pine, Nord, …)
+    - CRT scanline / vignette / aberration post-processing effects
+    - CPU core heatmap (heat-ramp colour grid over time)
+    - History sparklines for CPU, memory, disk I/O, network
+    - Process viewer: kill, suspend/resume, filter by regex, sort
+    - Process detail popup: cmdline, open FDs, CPU history sparkline
+    - System alerts log with configurable anomaly thresholds
+    - Disk, network inspector, GPU panels
+    - SSH-based remote host monitoring
+    - TOML config at ~/.config/pulse/config.toml
+    - Headless JSON server mode (pulse --server)
+
+  Keybindings:
+    o=Overview  n=Network  d=Disk  g=GPU  h=History  x=Heatmap
+    a=Alerts  i=ProcInfo  R=Remote  t=Theme  c=CRT  m=Layout  q=Quit
+
+grade: stable
+confinement: strict
+
+apps:
+  pulse:
+    command: bin/pulse
+    plugs:
+      - system-observe      # /proc/*, /proc/net/tcp, /etc/passwd
+      - hardware-observe    # /sys/class/hwmon, /sys/class/thermal, /sys/class/drm
+      - network-observe     # network interface statistics
+      - network             # outgoing SSH connections (remote monitoring)
+      - mount-observe       # disk mount / filesystem info
+      - opengl              # GPU enumeration (NVIDIA / AMD)
+      - home                # ~/.config/pulse/ config & plugin dir
+      - process-control     # SIGTERM / SIGKILL / SIGSTOP to user processes
+
+parts:
+  pulse:
+    plugin: rust
+    source: .
+    # Pin to the exact dependency versions recorded in Cargo.lock
+    override-build: |
+      cargo build --release --locked
+      install -Dm755 target/release/pulse "$SNAPCRAFT_PART_INSTALL/bin/pulse"
+    build-packages:
+      - pkg-config
+      - libssl-dev
+    # No runtime library deps: Rust statically links everything
