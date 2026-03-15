@@ -622,15 +622,26 @@ impl App {
                 });
             }
 
-            // Process tree view toggle
+            // Pause container / Process tree view toggle
             KeyCode::Char('p') | KeyCode::Char('P') => {
-                self.tree_view = !self.tree_view;
-                self.process_scroll = 0;
-                self.show_status(if self.tree_view {
-                    "Process Tree View"
+                if self.active_view == ActiveView::Containers {
+                    self.do_container_action(ContainerAction::Pause);
                 } else {
-                    "Process List View"
-                });
+                    self.tree_view = !self.tree_view;
+                    self.process_scroll = 0;
+                    self.show_status(if self.tree_view {
+                        "Process Tree View"
+                    } else {
+                        "Process List View"
+                    });
+                }
+            }
+
+            // Unpause container
+            KeyCode::Char('u') | KeyCode::Char('U') => {
+                if self.active_view == ActiveView::Containers {
+                    self.do_container_action(ContainerAction::Unpause);
+                }
             }
 
             // Container view
