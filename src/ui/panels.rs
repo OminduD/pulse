@@ -2205,3 +2205,239 @@ pub fn draw_containers(frame: &mut Frame, area: Rect, app: &App) {
 
     frame.render_widget(table, inner);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  FAN MONITOR PANEL
+// ══════════════════════════════════════════════════════════════════════════════
+
+pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    let tick = app.tick_count;
+    let phase = app.phase;
+
+    // Calculate average fan activity for border animation
+    let fan_activity = if app.fans.available && !app.fans.fans.is_empty() {
+        let total_pwm: f32 = app
+            .fans
+            .fans
+            .iter()
+            .filter_map(|f| f.pwm_pct())
+            .sum();
+        let count = app.fans.fans.iter().filter(|f| f.pwm.is_some()).count();
+        if count > 0 {
+            (total_pwm / count as f32) / 100.0
+        } else {
+            0.5 // Default activity if no PWM data
+        }
+    } else {
+        0.0
+    };
+
+    let block = animated_block(" 🌀 Fan Monitor ", theme, phase, fan_activity as f64);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if !app.fans.available {
+        let wave = animation::wave_pattern(tick, inner.width as usize);
+        let msg = Paragraph::new(vec![
+            Line::from(Span::styled(
+                " No fans detected (hwmon)",
+                Style::default().fg(theme.text_dim),
+            )),
+            Line::from(Span::styled(
+                " Check /sys/class/hwmon/ for fan sensors",
+                Style::default().fg(theme.text_dim),
+            )),
+            Line::from(Span::styled(wave, Style::default().fg(theme.border_dim))),
+        ]);
+        frame.render_widget(msg, inner);
+        return;
+    }
+
+    let mut lines = Vec::new();
+    let bar_width = 20;
+
+    // Group fans by device
+    let mut current_device = String::new();
+
+    for fan in &app.fans.fans {
+        // Add device header when device changes
+        if fan.device_name != current_device {
+            if !current_device.is_empty() {
+                lines.push(Line::from("")); // Separator between devices
+            }
+            current_device = fan.device_name.clone();
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(" {} {} ", animation::spinner(tick), fan.device_name),
+                    Style::default()
+                        .fg(theme.accent_primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+
+        // Fan label and RPM
+        let rpm = fan.rpm_or_zero();
+        let rpm_color = if fan.read_error {
+            theme.accent_warning // Can't read - show warning color
+        } else if rpm == 0 {
+            theme.accent_error // Stopped fan might be concerning
+        } else if rpm < 500 {
+            theme.accent_warning
+        } else {
+            theme.accent_secondary
+        };
+
+        // Build RPM bar based on max_rpm or PWM
+        let (ratio, bar) = if let Some(max_rpm) = fan.max_rpm {
+            let r = if max_rpm > 0 {
+                (rpm as f64 / max_rpm as f64).min(1.0)
+            } else {
+                0.0
+            };
+            (r, animation::shimmer_bar(r, bar_width, tick))
+        } else if let Some(pwm_pct) = fan.pwm_pct() {
+            let r = pwm_pct as f64 / 100.0;
+            (r, animation::gradient_bar(r, bar_width, tick))
+        } else {
+            // No max_rpm or PWM - show a simple indicator
+            (0.5, "─".repeat(bar_width))
+        };
+
+        // Spinning indicator for running fans
+        let spin_char = if fan.read_error {
+            "⚠" // Warning for unreadable
+        } else if rpm > 0 {
+            match (tick / 4) % 4 {
+                0 => "◐",
+                1 => "◓",
+                2 => "◑",
+                _ => "◒",
+            }
+        } else {
+            "○" // Stopped
+        };
+
+        // RPM display string
+        let rpm_str = if fan.read_error {
+            "  N/A ".to_string()
+        } else {
+            format!("{:>5} RPM ", rpm)
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {} ", spin_char),
+                Style::default().fg(if fan.read_error {
+                    theme.accent_warning
+                } else if rpm > 0 {
+                    theme.accent_tertiary
+                } else {
+                    theme.text_dim
+                }),
+            ),
+            Span::styled(
+                format!("{:<12} ", fan.label),
+                Style::default().fg(theme.text_bright),
+            ),
+            Span::styled(rpm_str, Style::default().fg(rpm_color)),
+            Span::styled(
+                format!("[{}]", bar),
+                Style::default().fg(theme.gradient_color(ratio)),
+            ),
+        ]));
+
+        // Show PWM and mode info if available
+        let mut detail_spans = Vec::new();
+
+        // Show read error hint
+        if fan.read_error {
+            detail_spans.push(Span::styled(
+                "    (device busy)",
+                Style::default().fg(theme.text_dim),
+            ));
+        }
+
+        if let Some(pwm_pct) = fan.pwm_pct() {
+            detail_spans.push(Span::styled(
+                format!("    PWM: {:>5.1}%", pwm_pct),
+                Style::default().fg(theme.text_dim),
+            ));
+        }
+
+        if let Some(mode_label) = fan.pwm_mode_label() {
+            let mode_color = match mode_label {
+                "Auto" => theme.accent_secondary,
+                "Manual" => theme.accent_warning,
+                "Off" => theme.accent_error,
+                _ => theme.text_dim,
+            };
+            detail_spans.push(Span::styled(
+                format!("  Mode: {}", mode_label),
+                Style::default().fg(mode_color),
+            ));
+        }
+
+        if let (Some(min), Some(max)) = (fan.min_rpm, fan.max_rpm) {
+            detail_spans.push(Span::styled(
+                format!("  Range: {}-{} RPM", min, max),
+                Style::default().fg(theme.text_dim),
+            ));
+        }
+
+        if !detail_spans.is_empty() {
+            lines.push(Line::from(detail_spans));
+        }
+    }
+
+    // Summary footer
+    lines.push(Line::from(""));
+    let total_fans = app.fans.fans.len();
+    let readable_fans: Vec<_> = app.fans.fans.iter().filter(|f| f.rpm.is_some()).collect();
+    let running_fans = readable_fans.iter().filter(|f| f.rpm_or_zero() > 0).count();
+    let unreadable_fans = app.fans.fans.iter().filter(|f| f.read_error).count();
+    let avg_rpm: u32 = if running_fans > 0 {
+        readable_fans.iter().map(|f| f.rpm_or_zero()).sum::<u32>() / running_fans as u32
+    } else {
+        0
+    };
+
+    let mut summary_spans = vec![
+        Span::styled(" ─── ", Style::default().fg(theme.border_dim)),
+        Span::styled(
+            format!("Total: {} fans", total_fans),
+            Style::default().fg(theme.text_dim),
+        ),
+        Span::styled(" │ ", Style::default().fg(theme.border_dim)),
+        Span::styled(
+            format!("Running: {}", running_fans),
+            Style::default().fg(if running_fans > 0 {
+                theme.accent_secondary
+            } else {
+                theme.accent_warning
+            }),
+        ),
+    ];
+
+    if unreadable_fans > 0 {
+        summary_spans.push(Span::styled(" │ ", Style::default().fg(theme.border_dim)));
+        summary_spans.push(Span::styled(
+            format!("Busy: {}", unreadable_fans),
+            Style::default().fg(theme.accent_warning),
+        ));
+    }
+
+    if avg_rpm > 0 {
+        summary_spans.push(Span::styled(" │ ", Style::default().fg(theme.border_dim)));
+        summary_spans.push(Span::styled(
+            format!("Avg: {} RPM", avg_rpm),
+            Style::default().fg(theme.accent_tertiary),
+        ));
+    }
+
+    lines.push(Line::from(summary_spans));
+
+    let para = Paragraph::new(lines);
+    frame.render_widget(para, inner);
+}
