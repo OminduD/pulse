@@ -4,12 +4,14 @@
 use std::time::Duration;
 
 use color_eyre::Result;
-use crossterm::event::{self, KeyEvent, KeyEventKind};
+use crossterm::event::{self, KeyEvent, KeyEventKind, MouseEvent};
 
 /// Events the main loop can react to.
 pub enum Event {
     /// A keyboard key was pressed.
     Key(KeyEvent),
+    /// A mouse event occurred.
+    Mouse(MouseEvent),
     /// A periodic UI render tick elapsed.
     Tick,
 }
@@ -31,10 +33,14 @@ impl EventLoop {
     /// emit a Tick event so the UI redraws.
     pub async fn next(&self) -> Result<Event> {
         if event::poll(self.tick_rate)? {
-            if let event::Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+            match event::read()? {
+                event::Event::Key(key) if key.kind == KeyEventKind::Press => {
                     return Ok(Event::Key(key));
                 }
+                event::Event::Mouse(mouse) => {
+                    return Ok(Event::Mouse(mouse));
+                }
+                _ => {}
             }
         }
         Ok(Event::Tick)
