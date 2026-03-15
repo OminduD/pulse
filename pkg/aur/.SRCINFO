@@ -1,0 +1,18 @@
+pkgbase = pulse-tui
+	pkgdesc = Production-grade terminal system monitor with animated cyberpunk TUI
+	pkgver = 0.2.0
+	pkgrel = 1
+	url = https://github.com/YOUR_GITHUB_USER/pulse
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = cargo
+	makedepends = rust
+	makedepends = pkg-config
+	optdepends = nvidia-utils: GPU monitoring via nvidia-smi
+	optdepends = openssh: remote host monitoring over SSH
+	provides = pulse-tui
+	source = pulse-tui-0.2.0.tar.gz::https://github.com/YOUR_GITHUB_USER/pulse/archive/v0.2.0.tar.gz
+	sha256sums = SKIP
+
+pkgname = pulse-tui
