@@ -9,41 +9,62 @@ use ratatui::style::{Color, Modifier, Style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThemeId {
-    Neon,
-    Monochrome,
-    Retro,
-    Synthwave,
-    Ocean,
+    TokyoNight,
+    CatppuccinMocha,
+    GruvboxDark,
+    RosePine,
+    Nord,
+    Kanagawa,
+    Dracula,
+    Everforest,
+    OneDark,
+    Moonfly,
 }
 
 impl ThemeId {
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "monochrome" | "mono" => Self::Monochrome,
-            "retro" | "green" => Self::Retro,
-            "synthwave" | "synth" => Self::Synthwave,
-            "ocean" | "blue" => Self::Ocean,
-            _ => Self::Neon,
+            "tokyonight" | "tokyo" | "tokyo_night" => Self::TokyoNight,
+            "catppuccin" | "mocha" | "catppuccin_mocha" => Self::CatppuccinMocha,
+            "gruvbox" | "gruvbox_dark" => Self::GruvboxDark,
+            "rosepine" | "rose_pine" | "rose" => Self::RosePine,
+            "nord" => Self::Nord,
+            "kanagawa" => Self::Kanagawa,
+            "dracula" => Self::Dracula,
+            "everforest" => Self::Everforest,
+            "onedark" | "one_dark" => Self::OneDark,
+            "moonfly" => Self::Moonfly,
+            _ => Self::TokyoNight,
         }
     }
 
     pub fn next(self) -> Self {
         match self {
-            Self::Neon => Self::Synthwave,
-            Self::Synthwave => Self::Ocean,
-            Self::Ocean => Self::Monochrome,
-            Self::Monochrome => Self::Retro,
-            Self::Retro => Self::Neon,
+            Self::TokyoNight => Self::CatppuccinMocha,
+            Self::CatppuccinMocha => Self::GruvboxDark,
+            Self::GruvboxDark => Self::RosePine,
+            Self::RosePine => Self::Nord,
+            Self::Nord => Self::Kanagawa,
+            Self::Kanagawa => Self::Dracula,
+            Self::Dracula => Self::Everforest,
+            Self::Everforest => Self::OneDark,
+            Self::OneDark => Self::Moonfly,
+            Self::Moonfly => Self::TokyoNight,
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Neon => "Neon",
-            Self::Monochrome => "Mono",
-            Self::Retro => "Retro",
-            Self::Synthwave => "Synth",
-            Self::Ocean => "Ocean",
+            Self::TokyoNight => "Tokyo Night",
+            Self::CatppuccinMocha => "Catppuccin",
+            Self::GruvboxDark => "Gruvbox",
+            Self::RosePine => "Rose Pine",
+            Self::Nord => "Nord",
+            Self::Kanagawa => "Kanagawa",
+            Self::Dracula => "Dracula",
+            Self::Everforest => "Everforest",
+            Self::OneDark => "One Dark",
+            Self::Moonfly => "Moonfly",
         }
     }
 }
@@ -79,151 +100,296 @@ pub struct Theme {
 impl Theme {
     pub fn from_id(id: ThemeId) -> Self {
         match id {
-            ThemeId::Neon => Self::neon(),
-            ThemeId::Monochrome => Self::monochrome(),
-            ThemeId::Retro => Self::retro(),
-            ThemeId::Synthwave => Self::synthwave(),
-            ThemeId::Ocean => Self::ocean(),
+            ThemeId::TokyoNight => Self::tokyo_night(),
+            ThemeId::CatppuccinMocha => Self::catppuccin_mocha(),
+            ThemeId::GruvboxDark => Self::gruvbox_dark(),
+            ThemeId::RosePine => Self::rose_pine(),
+            ThemeId::Nord => Self::nord(),
+            ThemeId::Kanagawa => Self::kanagawa(),
+            ThemeId::Dracula => Self::dracula(),
+            ThemeId::Everforest => Self::everforest(),
+            ThemeId::OneDark => Self::one_dark(),
+            ThemeId::Moonfly => Self::moonfly(),
         }
     }
 
-    // ── Dark neon (default) ──────────────────────────────────────────────
+    // ── Tokyo Night ──────────────────────────────────────────────────────
 
-    fn neon() -> Self {
+    fn tokyo_night() -> Self {
         Self {
-            id: ThemeId::Neon,
-            bg_dark: Color::Rgb(10, 10, 18),
-            bg_panel: Color::Rgb(16, 16, 28),
-            border_dim: Color::Rgb(40, 40, 70),
-            border_glow: Color::Rgb(0, 180, 200),
-            text_dim: Color::Rgb(100, 100, 140),
-            text_bright: Color::Rgb(200, 200, 230),
-            accent_primary: Color::Rgb(0, 255, 255),     // Cyan
-            accent_secondary: Color::Rgb(191, 64, 255),   // Purple
-            accent_tertiary: Color::Rgb(255, 16, 240),    // Pink
-            accent_warning: Color::Rgb(255, 165, 0),      // Orange
-            accent_error: Color::Rgb(255, 55, 55),        // Red
-            accent_success: Color::Rgb(57, 255, 20),      // Green
+            id: ThemeId::TokyoNight,
+            bg_dark: Color::Rgb(26, 27, 38),
+            bg_panel: Color::Rgb(31, 35, 53),
+            border_dim: Color::Rgb(86, 95, 137),
+            border_glow: Color::Rgb(122, 162, 247),
+            text_dim: Color::Rgb(86, 95, 137),
+            text_bright: Color::Rgb(192, 202, 245),
+            accent_primary: Color::Rgb(122, 162, 247),    // blue
+            accent_secondary: Color::Rgb(187, 154, 247),  // purple
+            accent_tertiary: Color::Rgb(125, 207, 255),   // cyan
+            accent_warning: Color::Rgb(224, 175, 104),    // yellow
+            accent_error: Color::Rgb(247, 118, 142),      // red
+            accent_success: Color::Rgb(158, 206, 106),    // green
             gradient: [
-                Color::Rgb(57, 255, 20),
-                Color::Rgb(0, 255, 255),
-                Color::Rgb(191, 64, 255),
-                Color::Rgb(255, 16, 240),
+                Color::Rgb(158, 206, 106),
+                Color::Rgb(125, 207, 255),
+                Color::Rgb(122, 162, 247),
+                Color::Rgb(187, 154, 247),
             ],
-            sparkline_fill: Color::Rgb(0, 120, 140),
-            header_accent: Color::Rgb(0, 255, 255),
+            sparkline_fill: Color::Rgb(52, 59, 88),
+            header_accent: Color::Rgb(122, 162, 247),
         }
     }
 
-    // ── Minimal monochrome ───────────────────────────────────────────────
+    // ── Catppuccin Mocha ─────────────────────────────────────────────────
 
-    fn monochrome() -> Self {
+    fn catppuccin_mocha() -> Self {
         Self {
-            id: ThemeId::Monochrome,
-            bg_dark: Color::Rgb(0, 0, 0),
-            bg_panel: Color::Rgb(15, 15, 15),
-            border_dim: Color::Rgb(60, 60, 60),
-            border_glow: Color::Rgb(140, 140, 140),
-            text_dim: Color::Rgb(120, 120, 120),
-            text_bright: Color::Rgb(220, 220, 220),
-            accent_primary: Color::Rgb(200, 200, 200),
-            accent_secondary: Color::Rgb(160, 160, 160),
-            accent_tertiary: Color::Rgb(180, 180, 180),
-            accent_warning: Color::Rgb(200, 200, 140),
-            accent_error: Color::Rgb(220, 100, 100),
-            accent_success: Color::Rgb(180, 220, 180),
+            id: ThemeId::CatppuccinMocha,
+            bg_dark: Color::Rgb(24, 24, 37),
+            bg_panel: Color::Rgb(30, 30, 46),
+            border_dim: Color::Rgb(88, 91, 112),
+            border_glow: Color::Rgb(137, 180, 250),
+            text_dim: Color::Rgb(88, 91, 112),
+            text_bright: Color::Rgb(205, 214, 244),
+            accent_primary: Color::Rgb(137, 180, 250),    // blue
+            accent_secondary: Color::Rgb(203, 166, 247),  // mauve
+            accent_tertiary: Color::Rgb(148, 226, 213),   // teal
+            accent_warning: Color::Rgb(249, 226, 175),    // yellow
+            accent_error: Color::Rgb(243, 139, 168),      // red
+            accent_success: Color::Rgb(166, 227, 161),    // green
             gradient: [
-                Color::Rgb(80, 80, 80),
-                Color::Rgb(130, 130, 130),
-                Color::Rgb(180, 180, 180),
-                Color::Rgb(240, 240, 240),
+                Color::Rgb(166, 227, 161),
+                Color::Rgb(148, 226, 213),
+                Color::Rgb(137, 180, 250),
+                Color::Rgb(203, 166, 247),
             ],
-            sparkline_fill: Color::Rgb(80, 80, 80),
-            header_accent: Color::Rgb(200, 200, 200),
+            sparkline_fill: Color::Rgb(49, 50, 68),
+            header_accent: Color::Rgb(137, 180, 250),
         }
     }
 
-    // ── Retro green terminal ─────────────────────────────────────────────
+    // ── Gruvbox Dark ─────────────────────────────────────────────────────
 
-    fn retro() -> Self {
+    fn gruvbox_dark() -> Self {
         Self {
-            id: ThemeId::Retro,
-            bg_dark: Color::Rgb(0, 10, 0),
-            bg_panel: Color::Rgb(0, 15, 0),
-            border_dim: Color::Rgb(0, 50, 0),
-            border_glow: Color::Rgb(0, 180, 0),
-            text_dim: Color::Rgb(0, 100, 0),
-            text_bright: Color::Rgb(0, 220, 0),
-            accent_primary: Color::Rgb(0, 255, 0),
-            accent_secondary: Color::Rgb(0, 200, 0),
-            accent_tertiary: Color::Rgb(80, 255, 80),
-            accent_warning: Color::Rgb(180, 255, 0),
-            accent_error: Color::Rgb(255, 80, 0),
-            accent_success: Color::Rgb(0, 255, 80),
+            id: ThemeId::GruvboxDark,
+            bg_dark: Color::Rgb(29, 32, 33),
+            bg_panel: Color::Rgb(40, 40, 40),
+            border_dim: Color::Rgb(80, 73, 69),
+            border_glow: Color::Rgb(215, 153, 33),
+            text_dim: Color::Rgb(102, 92, 84),
+            text_bright: Color::Rgb(235, 219, 178),
+            accent_primary: Color::Rgb(215, 153, 33),     // yellow
+            accent_secondary: Color::Rgb(204, 36, 29),    // red
+            accent_tertiary: Color::Rgb(69, 133, 136),    // aqua
+            accent_warning: Color::Rgb(214, 93, 14),      // orange
+            accent_error: Color::Rgb(251, 73, 52),        // bright red
+            accent_success: Color::Rgb(152, 151, 26),     // green
             gradient: [
-                Color::Rgb(0, 80, 0),
-                Color::Rgb(0, 140, 0),
-                Color::Rgb(0, 200, 0),
-                Color::Rgb(0, 255, 0),
+                Color::Rgb(152, 151, 26),
+                Color::Rgb(69, 133, 136),
+                Color::Rgb(215, 153, 33),
+                Color::Rgb(214, 93, 14),
             ],
-            sparkline_fill: Color::Rgb(0, 80, 0),
-            header_accent: Color::Rgb(0, 255, 0),
+            sparkline_fill: Color::Rgb(60, 56, 54),
+            header_accent: Color::Rgb(215, 153, 33),
         }
     }
 
-    // ── Synthwave ────────────────────────────────────────────────────────
+    // ── Rose Pine ────────────────────────────────────────────────────────
 
-    fn synthwave() -> Self {
+    fn rose_pine() -> Self {
         Self {
-            id: ThemeId::Synthwave,
-            bg_dark: Color::Rgb(15, 5, 25),
-            bg_panel: Color::Rgb(25, 10, 40),
-            border_dim: Color::Rgb(60, 20, 80),
-            border_glow: Color::Rgb(255, 50, 200),
-            text_dim: Color::Rgb(120, 80, 160),
-            text_bright: Color::Rgb(230, 200, 255),
-            accent_primary: Color::Rgb(255, 50, 200),     // Hot pink
-            accent_secondary: Color::Rgb(100, 80, 255),    // Electric blue
-            accent_tertiary: Color::Rgb(255, 200, 50),     // Gold
-            accent_warning: Color::Rgb(255, 160, 30),      // Deep orange
-            accent_error: Color::Rgb(255, 20, 60),         // Neon red
-            accent_success: Color::Rgb(50, 255, 180),      // Teal
+            id: ThemeId::RosePine,
+            bg_dark: Color::Rgb(25, 23, 36),
+            bg_panel: Color::Rgb(30, 28, 48),
+            border_dim: Color::Rgb(86, 82, 110),
+            border_glow: Color::Rgb(235, 188, 186),
+            text_dim: Color::Rgb(110, 106, 134),
+            text_bright: Color::Rgb(224, 222, 244),
+            accent_primary: Color::Rgb(235, 188, 186),    // rose
+            accent_secondary: Color::Rgb(196, 167, 231),  // iris
+            accent_tertiary: Color::Rgb(156, 207, 216),   // foam
+            accent_warning: Color::Rgb(246, 193, 119),    // gold
+            accent_error: Color::Rgb(235, 111, 146),      // love
+            accent_success: Color::Rgb(49, 116, 143),     // pine
             gradient: [
-                Color::Rgb(50, 255, 180),
-                Color::Rgb(100, 80, 255),
-                Color::Rgb(255, 50, 200),
-                Color::Rgb(255, 200, 50),
+                Color::Rgb(49, 116, 143),
+                Color::Rgb(156, 207, 216),
+                Color::Rgb(235, 188, 186),
+                Color::Rgb(196, 167, 231),
             ],
-            sparkline_fill: Color::Rgb(80, 30, 120),
-            header_accent: Color::Rgb(255, 50, 200),
+            sparkline_fill: Color::Rgb(38, 35, 58),
+            header_accent: Color::Rgb(235, 188, 186),
         }
     }
 
-    // ── Ocean deep ───────────────────────────────────────────────────────
+    // ── Nord ─────────────────────────────────────────────────────────────
 
-    fn ocean() -> Self {
+    fn nord() -> Self {
         Self {
-            id: ThemeId::Ocean,
-            bg_dark: Color::Rgb(5, 12, 20),
-            bg_panel: Color::Rgb(10, 18, 32),
-            border_dim: Color::Rgb(20, 50, 80),
-            border_glow: Color::Rgb(40, 160, 220),
-            text_dim: Color::Rgb(70, 110, 150),
-            text_bright: Color::Rgb(180, 220, 240),
-            accent_primary: Color::Rgb(40, 180, 255),      // Sky blue
-            accent_secondary: Color::Rgb(0, 220, 200),     // Aqua
-            accent_tertiary: Color::Rgb(100, 140, 255),    // Soft purple-blue
-            accent_warning: Color::Rgb(255, 200, 80),      // Warm yellow
-            accent_error: Color::Rgb(255, 100, 80),        // Coral
-            accent_success: Color::Rgb(60, 230, 160),      // Seafoam
+            id: ThemeId::Nord,
+            bg_dark: Color::Rgb(46, 52, 64),
+            bg_panel: Color::Rgb(59, 66, 82),
+            border_dim: Color::Rgb(67, 76, 94),
+            border_glow: Color::Rgb(136, 192, 208),
+            text_dim: Color::Rgb(76, 86, 106),
+            text_bright: Color::Rgb(236, 239, 244),
+            accent_primary: Color::Rgb(136, 192, 208),    // frost cyan
+            accent_secondary: Color::Rgb(129, 161, 193),  // frost blue
+            accent_tertiary: Color::Rgb(143, 188, 187),   // frost teal
+            accent_warning: Color::Rgb(235, 203, 139),    // aurora yellow
+            accent_error: Color::Rgb(191, 97, 106),       // aurora red
+            accent_success: Color::Rgb(163, 190, 140),    // aurora green
             gradient: [
-                Color::Rgb(0, 80, 120),
-                Color::Rgb(0, 160, 200),
-                Color::Rgb(40, 180, 255),
-                Color::Rgb(120, 220, 255),
+                Color::Rgb(163, 190, 140),
+                Color::Rgb(143, 188, 187),
+                Color::Rgb(136, 192, 208),
+                Color::Rgb(129, 161, 193),
             ],
-            sparkline_fill: Color::Rgb(15, 60, 100),
-            header_accent: Color::Rgb(40, 180, 255),
+            sparkline_fill: Color::Rgb(67, 76, 94),
+            header_accent: Color::Rgb(136, 192, 208),
+        }
+    }
+
+    // ── Kanagawa ─────────────────────────────────────────────────────────
+
+    fn kanagawa() -> Self {
+        Self {
+            id: ThemeId::Kanagawa,
+            bg_dark: Color::Rgb(22, 22, 29),
+            bg_panel: Color::Rgb(31, 31, 40),
+            border_dim: Color::Rgb(84, 84, 109),
+            border_glow: Color::Rgb(126, 156, 216),
+            text_dim: Color::Rgb(84, 84, 109),
+            text_bright: Color::Rgb(220, 215, 186),
+            accent_primary: Color::Rgb(126, 156, 216),    // crystal blue
+            accent_secondary: Color::Rgb(149, 127, 184),  // ono violet
+            accent_tertiary: Color::Rgb(127, 180, 202),   // spring blue
+            accent_warning: Color::Rgb(220, 165, 100),    // ronin yellow
+            accent_error: Color::Rgb(195, 64, 67),        // autumn red
+            accent_success: Color::Rgb(118, 148, 106),    // spring green
+            gradient: [
+                Color::Rgb(118, 148, 106),
+                Color::Rgb(127, 180, 202),
+                Color::Rgb(126, 156, 216),
+                Color::Rgb(149, 127, 184),
+            ],
+            sparkline_fill: Color::Rgb(49, 52, 68),
+            header_accent: Color::Rgb(126, 156, 216),
+        }
+    }
+
+    // ── Dracula ──────────────────────────────────────────────────────────
+
+    fn dracula() -> Self {
+        Self {
+            id: ThemeId::Dracula,
+            bg_dark: Color::Rgb(21, 22, 30),
+            bg_panel: Color::Rgb(40, 42, 54),
+            border_dim: Color::Rgb(68, 71, 90),
+            border_glow: Color::Rgb(189, 147, 249),
+            text_dim: Color::Rgb(98, 114, 164),
+            text_bright: Color::Rgb(248, 248, 242),
+            accent_primary: Color::Rgb(189, 147, 249),    // purple
+            accent_secondary: Color::Rgb(255, 121, 198),  // pink
+            accent_tertiary: Color::Rgb(139, 233, 253),   // cyan
+            accent_warning: Color::Rgb(241, 250, 140),    // yellow
+            accent_error: Color::Rgb(255, 85, 85),        // red
+            accent_success: Color::Rgb(80, 250, 123),     // green
+            gradient: [
+                Color::Rgb(80, 250, 123),
+                Color::Rgb(139, 233, 253),
+                Color::Rgb(189, 147, 249),
+                Color::Rgb(255, 121, 198),
+            ],
+            sparkline_fill: Color::Rgb(53, 55, 70),
+            header_accent: Color::Rgb(189, 147, 249),
+        }
+    }
+
+    // ── Everforest ───────────────────────────────────────────────────────
+
+    fn everforest() -> Self {
+        Self {
+            id: ThemeId::Everforest,
+            bg_dark: Color::Rgb(29, 35, 34),
+            bg_panel: Color::Rgb(38, 45, 43),
+            border_dim: Color::Rgb(78, 91, 88),
+            border_glow: Color::Rgb(131, 192, 146),
+            text_dim: Color::Rgb(100, 116, 113),
+            text_bright: Color::Rgb(211, 198, 170),
+            accent_primary: Color::Rgb(131, 192, 146),    // aqua
+            accent_secondary: Color::Rgb(167, 192, 128),  // green
+            accent_tertiary: Color::Rgb(125, 196, 228),   // blue
+            accent_warning: Color::Rgb(219, 188, 127),    // yellow
+            accent_error: Color::Rgb(230, 126, 128),      // red
+            accent_success: Color::Rgb(167, 192, 128),    // green
+            gradient: [
+                Color::Rgb(167, 192, 128),
+                Color::Rgb(131, 192, 146),
+                Color::Rgb(125, 196, 228),
+                Color::Rgb(219, 188, 127),
+            ],
+            sparkline_fill: Color::Rgb(56, 68, 66),
+            header_accent: Color::Rgb(167, 192, 128),
+        }
+    }
+
+    // ── One Dark ─────────────────────────────────────────────────────────
+
+    fn one_dark() -> Self {
+        Self {
+            id: ThemeId::OneDark,
+            bg_dark: Color::Rgb(24, 26, 31),
+            bg_panel: Color::Rgb(40, 44, 52),
+            border_dim: Color::Rgb(59, 66, 82),
+            border_glow: Color::Rgb(97, 175, 239),
+            text_dim: Color::Rgb(92, 99, 112),
+            text_bright: Color::Rgb(171, 178, 191),
+            accent_primary: Color::Rgb(97, 175, 239),     // blue
+            accent_secondary: Color::Rgb(198, 120, 221),  // purple
+            accent_tertiary: Color::Rgb(86, 182, 194),    // cyan
+            accent_warning: Color::Rgb(229, 192, 123),    // yellow
+            accent_error: Color::Rgb(224, 108, 117),      // red
+            accent_success: Color::Rgb(152, 195, 121),    // green
+            gradient: [
+                Color::Rgb(152, 195, 121),
+                Color::Rgb(86, 182, 194),
+                Color::Rgb(97, 175, 239),
+                Color::Rgb(198, 120, 221),
+            ],
+            sparkline_fill: Color::Rgb(60, 68, 80),
+            header_accent: Color::Rgb(97, 175, 239),
+        }
+    }
+
+    // ── Moonfly ──────────────────────────────────────────────────────────
+
+    fn moonfly() -> Self {
+        Self {
+            id: ThemeId::Moonfly,
+            bg_dark: Color::Rgb(15, 15, 22),
+            bg_panel: Color::Rgb(27, 29, 36),
+            border_dim: Color::Rgb(58, 61, 76),
+            border_glow: Color::Rgb(130, 194, 255),
+            text_dim: Color::Rgb(78, 82, 103),
+            text_bright: Color::Rgb(188, 197, 220),
+            accent_primary: Color::Rgb(130, 194, 255),    // cornflower blue
+            accent_secondary: Color::Rgb(160, 140, 255),  // violet
+            accent_tertiary: Color::Rgb(115, 218, 202),   // turquoise
+            accent_warning: Color::Rgb(255, 203, 107),    // khaki
+            accent_error: Color::Rgb(255, 92, 87),        // red
+            accent_success: Color::Rgb(166, 218, 149),    // mint green
+            gradient: [
+                Color::Rgb(166, 218, 149),
+                Color::Rgb(115, 218, 202),
+                Color::Rgb(130, 194, 255),
+                Color::Rgb(160, 140, 255),
+            ],
+            sparkline_fill: Color::Rgb(40, 42, 55),
+            header_accent: Color::Rgb(130, 194, 255),
         }
     }
 
