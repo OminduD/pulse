@@ -40,6 +40,8 @@ pub struct FanInfo {
     pub level: Option<String>,
     /// File couldn't be read.
     pub read_error: bool,
+    /// Speed value is estimated (e.g., GPU fan when EC doesn't report it).
+    pub estimated: bool,
 }
 
 impl FanSnapshot {
@@ -161,6 +163,7 @@ fn collect_mcontrolcenter_dbus() -> Option<(Vec<FanInfo>, Option<String>, Option
             pwm_mode: None,
             level: None,
             read_error: false,
+            estimated: false,
         });
     }
 
@@ -168,17 +171,39 @@ fn collect_mcontrolcenter_dbus() -> Option<(Vec<FanInfo>, Option<String>, Option
     if let Some(gpu_speed) = dbus_call_int("getGPURealtimeFanSpeed") {
         let gpu_rpm = get_mcc_fan_rpm(false);
 
+        // Check if GPU speed seems wrong (reports 0 when CPU fan is running)
+        // This is a known issue with some MSI laptop EC firmware variants
+        let cpu_speed = fans.first().and_then(|f| f.speed_pct).unwrap_or(0);
+        let cooler_boost = dbus_call_bool("getCoolerBoost").unwrap_or(false);
+
+        let (effective_speed, is_estimated) = if gpu_speed == 0 && (cpu_speed > 0 || cooler_boost) {
+            // GPU fan likely running but EC doesn't report it correctly
+            // When cooler boost is on, both fans run at max (100%)
+            // Otherwise estimate from CPU speed
+            if cooler_boost {
+                (100, true)
+            } else if cpu_speed > 30 {
+                // If CPU fan is running significantly, GPU fan is likely running too
+                (cpu_speed as i32, true)
+            } else {
+                (gpu_speed, false)
+            }
+        } else {
+            (gpu_speed, false)
+        };
+
         fans.push(FanInfo {
             device_name: "msi-ec".to_string(),
             label: "GPU Fan".to_string(),
             rpm: gpu_rpm,
-            speed_pct: Some(gpu_speed.min(100) as u8),
+            speed_pct: Some(effective_speed.min(100) as u8),
             min_rpm: None,
             max_rpm: None,
             pwm: None,
             pwm_mode: None,
             level: None,
             read_error: false,
+            estimated: is_estimated,
         });
     }
 
@@ -360,6 +385,7 @@ fn collect_thinkpad() -> Option<Vec<FanInfo>> {
             pwm_mode: None,
             level,
             read_error: false,
+            estimated: false,
         });
     }
 
@@ -386,6 +412,7 @@ fn collect_msi_ec_fan(base: &Path, subdir: &str, label: &str) -> Option<FanInfo>
         pwm_mode: None,
         level: None,
         read_error: false,
+        estimated: false,
     })
 }
 
@@ -429,6 +456,7 @@ fn collect_asus() -> Option<(Vec<FanInfo>, Option<String>)> {
                                 pwm_mode: None,
                                 level: None,
                                 read_error: rpm.is_none(),
+                                estimated: false,
                             });
                         }
                     }
@@ -490,6 +518,7 @@ fn collect_dell() -> Option<Vec<FanInfo>> {
                                     pwm_mode: None,
                                     level: None,
                                     read_error: rpm.is_none(),
+                                    estimated: false,
                                 });
                             }
                         }
@@ -541,6 +570,7 @@ fn collect_hp() -> Option<Vec<FanInfo>> {
                                     pwm_mode: None,
                                     level: None,
                                     read_error: rpm.is_none(),
+                                    estimated: false,
                                 });
                             }
                         }
@@ -622,6 +652,7 @@ fn collect_hwmon(existing: &[FanInfo]) -> Vec<FanInfo> {
                             pwm_mode,
                             level: None,
                             read_error,
+                            estimated: false,
                         });
                     }
                 }
