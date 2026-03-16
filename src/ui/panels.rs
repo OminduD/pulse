@@ -2257,6 +2257,48 @@ pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
     let mut lines = Vec::new();
     let bar_width = 20;
 
+    // Show laptop brand and fan mode if detected
+    let mut header_spans = Vec::new();
+    if let Some(brand) = &app.fans.laptop_brand {
+        header_spans.push(Span::styled(
+            format!(" {} ", brand),
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    if let Some(mode) = &app.fans.fan_mode {
+        let mode_color = match mode.to_lowercase().as_str() {
+            "auto" | "balanced" => theme.accent_secondary,
+            "silent" => theme.accent_tertiary,
+            "advanced" | "turbo" => theme.accent_warning,
+            _ => theme.text_dim,
+        };
+        header_spans.push(Span::styled(" │ ", Style::default().fg(theme.border_dim)));
+        header_spans.push(Span::styled("Mode: ", Style::default().fg(theme.text_dim)));
+        header_spans.push(Span::styled(
+            mode.to_uppercase(),
+            Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
+        ));
+    }
+    if let Some(boost) = app.fans.cooler_boost {
+        if boost {
+            header_spans.push(Span::styled(
+                "  BOOST ",
+                Style::default()
+                    .fg(theme.accent_error)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            if animation::flicker(tick, 6) {
+                header_spans.push(Span::styled("🔥", Style::default()));
+            }
+        }
+    }
+    if !header_spans.is_empty() {
+        lines.push(Line::from(header_spans));
+        lines.push(Line::from(""));
+    }
+
     // Group fans by device
     let mut current_device = String::new();
 
@@ -2277,38 +2319,45 @@ pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
             ]));
         }
 
-        // Fan label and RPM
+        // Determine speed (percentage or RPM-based)
+        let speed_pct = fan.effective_speed_pct();
         let rpm = fan.rpm_or_zero();
-        let rpm_color = if fan.read_error {
-            theme.accent_warning // Can't read - show warning color
-        } else if rpm == 0 {
-            theme.accent_error // Stopped fan might be concerning
-        } else if rpm < 500 {
+        let has_pct = fan.speed_pct.is_some();
+
+        // Color based on speed
+        let speed_color = if fan.read_error {
             theme.accent_warning
+        } else if let Some(pct) = speed_pct {
+            if pct < 1.0 {
+                theme.text_dim // Off/idle
+            } else if pct < 30.0 {
+                theme.accent_tertiary // Low
+            } else if pct < 70.0 {
+                theme.accent_secondary // Normal
+            } else {
+                theme.accent_warning // High
+            }
+        } else if rpm == 0 {
+            theme.text_dim
         } else {
             theme.accent_secondary
         };
 
-        // Build RPM bar based on max_rpm or PWM
-        let (ratio, bar) = if let Some(max_rpm) = fan.max_rpm {
-            let r = if max_rpm > 0 {
-                (rpm as f64 / max_rpm as f64).min(1.0)
-            } else {
-                0.0
-            };
-            (r, animation::shimmer_bar(r, bar_width, tick))
+        // Build speed bar
+        let ratio = speed_pct.map(|p| p as f64 / 100.0).unwrap_or(0.5);
+        let bar = if speed_pct.is_some() {
+            animation::shimmer_bar(ratio, bar_width, tick)
         } else if let Some(pwm_pct) = fan.pwm_pct() {
-            let r = pwm_pct as f64 / 100.0;
-            (r, animation::gradient_bar(r, bar_width, tick))
+            animation::gradient_bar(pwm_pct as f64 / 100.0, bar_width, tick)
         } else {
-            // No max_rpm or PWM - show a simple indicator
-            (0.5, "─".repeat(bar_width))
+            "─".repeat(bar_width)
         };
 
-        // Spinning indicator for running fans
+        // Spinning indicator
+        let is_running = fan.is_running();
         let spin_char = if fan.read_error {
-            "⚠" // Warning for unreadable
-        } else if rpm > 0 {
+            "⚠"
+        } else if is_running {
             match (tick / 4) % 4 {
                 0 => "◐",
                 1 => "◓",
@@ -2316,14 +2365,22 @@ pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
                 _ => "◒",
             }
         } else {
-            "○" // Stopped
+            "○"
         };
 
-        // RPM display string
-        let rpm_str = if fan.read_error {
-            "  N/A ".to_string()
+        // Speed display string - show both RPM and % when available
+        let speed_str = if fan.read_error {
+            "    N/A    ".to_string()
+        } else if let Some(rpm) = fan.rpm {
+            if let Some(pct) = speed_pct {
+                format!("{:>5} RPM {:>3.0}%", rpm, pct)
+            } else {
+                format!("{:>5} RPM     ", rpm)
+            }
+        } else if has_pct {
+            format!("      {:>5.0}%    ", speed_pct.unwrap_or(0.0))
         } else {
-            format!("{:>5} RPM ", rpm)
+            "    OFF    ".to_string()
         };
 
         lines.push(Line::from(vec![
@@ -2331,7 +2388,7 @@ pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
                 format!("  {} ", spin_char),
                 Style::default().fg(if fan.read_error {
                     theme.accent_warning
-                } else if rpm > 0 {
+                } else if is_running {
                     theme.accent_tertiary
                 } else {
                     theme.text_dim
@@ -2341,7 +2398,7 @@ pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
                 format!("{:<12} ", fan.label),
                 Style::default().fg(theme.text_bright),
             ),
-            Span::styled(rpm_str, Style::default().fg(rpm_color)),
+            Span::styled(speed_str, Style::default().fg(speed_color)),
             Span::styled(
                 format!("[{}]", bar),
                 Style::default().fg(theme.gradient_color(ratio)),
@@ -2386,6 +2443,19 @@ pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
             ));
         }
 
+        // ThinkPad fan level
+        if let Some(level) = &fan.level {
+            let level_color = match level.as_str() {
+                "auto" => theme.accent_secondary,
+                "full-speed" | "disengaged" => theme.accent_error,
+                _ => theme.text_dim,
+            };
+            detail_spans.push(Span::styled(
+                format!("  Level: {}", level),
+                Style::default().fg(level_color),
+            ));
+        }
+
         if !detail_spans.is_empty() {
             lines.push(Line::from(detail_spans));
         }
@@ -2394,13 +2464,35 @@ pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
     // Summary footer
     lines.push(Line::from(""));
     let total_fans = app.fans.fans.len();
-    let readable_fans: Vec<_> = app.fans.fans.iter().filter(|f| f.rpm.is_some()).collect();
-    let running_fans = readable_fans.iter().filter(|f| f.rpm_or_zero() > 0).count();
+    // Count running fans (either by speed_pct or RPM)
+    let running_fans = app
+        .fans
+        .fans
+        .iter()
+        .filter(|f| {
+            if let Some(pct) = f.speed_pct {
+                pct > 0
+            } else if let Some(rpm) = f.rpm {
+                rpm > 0
+            } else {
+                false
+            }
+        })
+        .count();
     let unreadable_fans = app.fans.fans.iter().filter(|f| f.read_error).count();
-    let avg_rpm: u32 = if running_fans > 0 {
-        readable_fans.iter().map(|f| f.rpm_or_zero()).sum::<u32>() / running_fans as u32
+
+    // Calculate average speed percentage
+    let speeds: Vec<f32> = app
+        .fans
+        .fans
+        .iter()
+        .filter_map(|f| f.effective_speed_pct())
+        .filter(|&p| p > 0.0)
+        .collect();
+    let avg_speed = if !speeds.is_empty() {
+        speeds.iter().sum::<f32>() / speeds.len() as f32
     } else {
-        0
+        0.0
     };
 
     let mut summary_spans = vec![
@@ -2428,10 +2520,10 @@ pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
         ));
     }
 
-    if avg_rpm > 0 {
+    if avg_speed > 0.0 {
         summary_spans.push(Span::styled(" │ ", Style::default().fg(theme.border_dim)));
         summary_spans.push(Span::styled(
-            format!("Avg: {} RPM", avg_rpm),
+            format!("Avg: {:.0}%", avg_speed),
             Style::default().fg(theme.accent_tertiary),
         ));
     }
