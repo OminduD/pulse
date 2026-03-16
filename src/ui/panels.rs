@@ -2369,16 +2369,17 @@ pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
         };
 
         // Speed display string - show both RPM and % when available
+        let estimated_marker = if fan.estimated { "~" } else { "" };
         let speed_str = if fan.read_error {
             "    N/A    ".to_string()
         } else if let Some(rpm) = fan.rpm {
             if let Some(pct) = speed_pct {
-                format!("{:>5} RPM {:>3.0}%", rpm, pct)
+                format!("{:>5} RPM {:>3.0}%{}", rpm, pct, estimated_marker)
             } else {
                 format!("{:>5} RPM     ", rpm)
             }
         } else if has_pct {
-            format!("      {:>5.0}%    ", speed_pct.unwrap_or(0.0))
+            format!("     {:>3.0}%{}    ", speed_pct.unwrap_or(0.0), estimated_marker)
         } else {
             "    OFF    ".to_string()
         };
@@ -2407,6 +2408,14 @@ pub fn draw_fans(frame: &mut Frame, area: Rect, app: &App) {
 
         // Show PWM and mode info if available
         let mut detail_spans = Vec::new();
+
+        // Show estimated hint
+        if fan.estimated {
+            detail_spans.push(Span::styled(
+                "    (~estimated)",
+                Style::default().fg(theme.text_dim),
+            ));
+        }
 
         // Show read error hint
         if fan.read_error {
