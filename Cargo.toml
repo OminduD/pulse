@@ -2,11 +2,15 @@
 name = "pulse"
 version = "0.2.0"
 edition = "2021"
-description = "A production-grade terminal system monitor with animated cyberpunk TUI"
+description = "A production-grade terminal system monitor with an animated cyberpunk TUI"
 license = "MIT"
-authors = ["pulse contributors"]
-keywords = ["system-monitor", "tui", "terminal", "linux"]
-categories = ["command-line-utilities"]
+authors = ["Pulse Contributors"]
+readme = "README.md"
+repository = "https://github.com/OminduD/pulse"
+keywords = ["system-monitor", "tui", "terminal", "linux", "performance"]
+categories = ["command-line-utilities", "visualization"]
+# Optional but powerful for crates.io ranking
+rust-version = "1.75"
 
 [dependencies]
 # TUI
