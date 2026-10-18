@@ -113,7 +113,7 @@ jobs:
           sed -i "s/^pkgrel=.*/pkgrel=1/" packaging/aur/pulse-tui/PKGBUILD
 
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4
+        uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
         with:
           pkgname: pulse-tui
           pkgbuild: packaging/aur/pulse-tui/PKGBUILD
