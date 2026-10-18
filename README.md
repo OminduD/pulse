@@ -38,12 +38,26 @@ Or for the development version:
 yay -S pulse-tui-git
 ```
 
-### Snap (Ubuntu/Universal)
-
-Pulse is available on the Snap Store:
+### crates.io (Cargo)
 
 ```bash
-sudo snap install pulse-tui
+cargo install pulse-tui
+```
+
+### Debian / Ubuntu (.deb)
+
+Download the latest `.deb` from [Releases](https://github.com/OminduD/pulse/releases):
+
+```bash
+sudo apt install ./pulse-tui_*_amd64.deb
+```
+
+### Red Hat / Fedora / CentOS (.rpm)
+
+Download the latest `.rpm` from [Releases](https://github.com/OminduD/pulse/releases):
+
+```bash
+sudo dnf install ./pulse-tui-*.x86_64.rpm
 ```
 
 ### From Source

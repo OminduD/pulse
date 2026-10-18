@@ -53,3 +53,26 @@ strip = true
 
 [profile.dev]
 opt-level = 1
+
+[package.metadata.deb]
+name = "pulse-tui"
+maintainer = "Omindu Gunathilaka <omindudulneth@outlook.com>"
+copyright = "2026, Omindu Gunathilaka"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+A production-grade terminal system monitor with an animated cyberpunk TUI. \
+Provides real-time CPU, GPU, memory, disk, network, fan speed, and process tracking."""
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/pulse", "usr/bin/pulse", "755"],
+    ["README.md", "usr/share/doc/pulse-tui/README.md", "644"],
+    ["LICENSE", "usr/share/doc/pulse-tui/copyright", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/pulse", dest = "/usr/bin/pulse", mode = "755" },
+    { source = "LICENSE", dest = "/usr/share/licenses/pulse-tui/LICENSE", mode = "644" },
+    { source = "README.md", dest = "/usr/share/doc/pulse-tui/README.md", mode = "644" },
+]
