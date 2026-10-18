@@ -1,9 +1,9 @@
-# Maintainer: Omindu Gunathilaka <your-email@example.com>
+# Maintainer: Omindu Gunathilaka <omindudulneth@outlook.com>
 
 pkgname=pulse-tui
 pkgver=0.2.0
 pkgrel=1
-pkgdesc="Production-grade terminal system monitor with animated cyberpunk TUI"
+pkgdesc="Production-grade terminal system monitor with animated TUI"
 arch=('x86_64' 'aarch64')
 url="https://github.com/OminduD/pulse"
 license=('MIT')

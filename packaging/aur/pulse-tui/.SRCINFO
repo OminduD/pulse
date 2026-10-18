@@ -1,5 +1,5 @@
 pkgbase = pulse-tui
-	pkgdesc = Production-grade terminal system monitor with animated cyberpunk TUI
+	pkgdesc = Production-grade terminal system monitor with animated TUI
 	pkgver = 0.2.0
 	pkgrel = 1
 	url = https://github.com/OminduD/pulse
