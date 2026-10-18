@@ -6,9 +6,14 @@ pkgbase = pulse-tui
 	arch = x86_64
 	arch = aarch64
 	license = MIT
-	makedepends = rust
 	makedepends = cargo
+	depends = gcc-libs
+	depends = glibc
+	optdepends = nvidia-utils: GPU monitoring support via nvidia-smi
+	optdepends = openssh: remote host monitoring over SSH
 	provides = pulse-tui
+	provides = pulse
+	conflicts = pulse
 	source = pulse-tui-0.2.0.tar.gz::https://github.com/OminduD/pulse/archive/refs/tags/v0.2.0.tar.gz
 	sha256sums = 6a5a4ee6768e4fb1342491a6ccef0d1521b651db30af34bd708e4b1716cd82cf
 
