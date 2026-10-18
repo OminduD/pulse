@@ -759,8 +759,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "pulse"
-version = "0.2.0"
+name = "pulse-tui"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "clap",
