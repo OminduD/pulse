@@ -94,6 +94,36 @@ jobs:
             artifacts/**/*.snap
             artifacts/SHA256SUMS
 
+  # ── Publish to AUR ──────────────────────────────────────────────────────────
+  publish-aur:
+    name: Publish to AUR
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update PKGBUILD version
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" packaging/aur/pulse-tui/PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" packaging/aur/pulse-tui/PKGBUILD
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4
+        with:
+          pkgname: pulse-tui
+          pkgbuild: packaging/aur/pulse-tui/PKGBUILD
+          commit_username: 'OminduD'
+          commit_email: 'omindudulneth@outlook.com'
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Release ${{ steps.version.outputs.version }}"
+          updpkgsums: true
+          ssh_keyscan_types: ed25519
+
   # ── Publish Snap to Snap Store ──────────────────────────────────────────────
   # Uncomment after running: snapcraft login && snapcraft export-login snap-store.env
   # then add the file contents as a GitHub secret named SNAPCRAFT_STORE_CREDENTIALS.
